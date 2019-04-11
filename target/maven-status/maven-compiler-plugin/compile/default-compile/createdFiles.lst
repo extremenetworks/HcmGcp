@@ -1,0 +1,7 @@
+com\extremenetworks\hcm\gcp\mgr\GoogleComputeEngineApi.class
+com\extremenetworks\hcm\gcp\mgr\ResourcesWebResponse.class
+com\extremenetworks\hcm\gcp\mgr\GoogleComputeEngineManager.class
+com\extremenetworks\hcm\gcp\mgr\GoogleComputeEngineManager$AreRulesEqualResult.class
+com\extremenetworks\hcm\gcp\mgr\ResourcesWorker.class
+com\extremenetworks\hcm\gcp\mgr\JaxRsActivator.class
+com\extremenetworks\hcm\gcp\mgr\ResourceRes.class
