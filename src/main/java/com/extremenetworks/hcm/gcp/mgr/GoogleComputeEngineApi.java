@@ -10,6 +10,7 @@ import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -157,34 +158,97 @@ public class GoogleComputeEngineApi {
 //	}
 	
 
-	public ZoneList retrieveAllZones(String projectId, String logPrefix) {
+//	public ZoneList retrieveAllZones(String projectId) {
+//	
+//		Compute computeConnection = computeConnections.get(projectId);
+//		if (computeConnection == null) {
+//			logger.warn("Cannot retrieve any zones since there is no Compute connection for project " + projectId);
+//			return null;
+//		}
+//		
+//		
+//		logger.debug("Retrieving all zones from project " + projectId);
+//		
+//		try {
+//			// Retrieve all zones for the given project
+//			ZoneList zoneList = computeConnection.zones().list(projectId).setMaxResults(maxQueryResults).execute();
+//			
+//			if (zoneList == null || zoneList.getItems() == null) {
+//				logger.info("No zones found for project with id " + projectId);
+//				return null;
+//			} 
+//				
+//			logger.debug("First poll of max " + maxQueryResults + " results returned a list of " 
+//				+ zoneList.getItems().size() + " zones found for project with id " + projectId 
+//				+ ": " + jsonMapper.writeValueAsString(zoneList));
+//				
+//			/* Create a result list that will hold all regions retrieved from all polls */
+//			ZoneList allZones = new ZoneList();
+//			allZones.setItems(new ArrayList<Zone>());
+//			allZones.getItems().addAll(zoneList.getItems());
+//			
+//			/* If we received a "nextPageToken" it means that we have to page through all zones
+//			 * as there are more zones than we retrieved due to the configured "MaxResults" parameter */
+//			int nrOfPolls = 2;
+//				
+//			while (zoneList.getNextPageToken() != null && !zoneList.getNextPageToken().isEmpty()) {
+//			
+//				zoneList = computeConnection
+//						.zones().list(projectId)
+//						.setMaxResults(maxQueryResults)
+//						.setPageToken(zoneList.getNextPageToken())
+//						.execute();
+//				
+//				if (zoneList == null || zoneList.getItems() == null) {
+//					logger.warn("Error retrieving zones from GCE on poll page " + nrOfPolls 
+//						+ ". Not returning an incomplete list of " + allZones.getItems().size() + " zones retrieved so far!");
+//					return null;
+//				} 
+//				
+//				logger.debug("Received next list of zones from GCE (page nr " + nrOfPolls + "): " + jsonMapper.writeValueAsString(zoneList));
+//				allZones.getItems().addAll(zoneList.getItems());
+//				nrOfPolls++;
+//			}
+//			
+//			// To report the correct number of page polls
+//			nrOfPolls--;
+//			
+//			logger.debug("Finished retrieving the full list of " + allZones.getItems().size() + " zones using " + nrOfPolls + " page polls");
+//			return allZones;  
+//			
+//		} catch (Exception e) {
+//			logger.error("Error while trying to retrieve all zones for project with id " + projectId, e);
+//			return null;
+//		} 
+//	}
 	
+	public List<Object> retrieveAllZones(String projectId) {
+		
 		Compute computeConnection = computeConnections.get(projectId);
 		if (computeConnection == null) {
-			logger.warn(logPrefix + "Cannot retrieve any zones since there is no Compute connection for project " + projectId);
+			logger.warn("Cannot retrieve any zones since there is no Compute connection for project " + projectId);
 			return null;
 		}
 		
-		logPrefix += "\t";
-		logger.debug(logPrefix + "Retrieving all zones from project " + projectId);
+		
+		logger.debug("Retrieving all zones from project " + projectId);
 		
 		try {
 			// Retrieve all zones for the given project
 			ZoneList zoneList = computeConnection.zones().list(projectId).setMaxResults(maxQueryResults).execute();
 			
 			if (zoneList == null || zoneList.getItems() == null) {
-				logger.info(logPrefix + "No zones found for project with id " + projectId);
+				logger.info("No zones found for project with id " + projectId);
 				return null;
 			} 
 				
-			logger.debug(logPrefix + "First poll of max " + maxQueryResults + " results returned a list of " 
+			logger.debug("First poll of max " + maxQueryResults + " results returned a list of " 
 				+ zoneList.getItems().size() + " zones found for project with id " + projectId 
 				+ ": " + jsonMapper.writeValueAsString(zoneList));
 				
 			/* Create a result list that will hold all regions retrieved from all polls */
-			ZoneList allZones = new ZoneList();
-			allZones.setItems(new ArrayList<Zone>());
-			allZones.getItems().addAll(zoneList.getItems());
+			List<Object> allZones = new ArrayList<Object>();
+			allZones.addAll(zoneList.getItems());
 			
 			/* If we received a "nextPageToken" it means that we have to page through all zones
 			 * as there are more zones than we retrieved due to the configured "MaxResults" parameter */
@@ -199,57 +263,56 @@ public class GoogleComputeEngineApi {
 						.execute();
 				
 				if (zoneList == null || zoneList.getItems() == null) {
-					logger.warn(logPrefix + "Error retrieving zones from GCE on poll page " + nrOfPolls 
-						+ ". Not returning an incomplete list of " + allZones.getItems().size() + " zones retrieved so far!");
+					logger.warn("Error retrieving zones from GCE on poll page " + nrOfPolls 
+						+ ". Not returning an incomplete list of " + allZones.size() + " zones retrieved so far!");
 					return null;
 				} 
 				
-				logger.debug(logPrefix + "Received next list of zones from GCE (page nr " + nrOfPolls + "): " + jsonMapper.writeValueAsString(zoneList));
-				allZones.getItems().addAll(zoneList.getItems());
+				logger.debug("Received next list of zones from GCE (page nr " + nrOfPolls + "): " + jsonMapper.writeValueAsString(zoneList));
+				allZones.addAll(zoneList.getItems());
 				nrOfPolls++;
 			}
 			
 			// To report the correct number of page polls
 			nrOfPolls--;
 			
-			logger.debug(logPrefix + "Finished retrieving the full list of " + allZones.getItems().size() + " zones using " + nrOfPolls + " page polls");
+			logger.debug("Finished retrieving the full list of " + allZones.size() + " zones using " + nrOfPolls + " page polls");
 			return allZones;  
 			
 		} catch (Exception e) {
-			logger.error(logPrefix + "Error while trying to retrieve all zones for project with id " + projectId, e);
+			logger.error("Error while trying to retrieve all zones for project with id " + projectId, e);
 			return null;
 		} 
 	}
 	
 	
-	public RegionList retrieveAllRegions(String projectId, String logPrefix) {
+	public List<Object> retrieveAllRegions(String projectId) {
 
 		Compute computeConnection = computeConnections.get(projectId);
 		if (computeConnection == null) {
-			logger.warn(logPrefix + "Cannot retrieve any regions since there is no Compute connection for project " + projectId);
+			logger.warn("Cannot retrieve any regions since there is no Compute connection for project " + projectId);
 			return null;
 		}
 		
-		logPrefix += "\t";
-		logger.debug(logPrefix + "Retrieving all regions from project " + projectId);
+		
+		logger.debug("Retrieving all regions from project " + projectId);
 		
 		try {
 			// Retrieve all regions for the given project
 			RegionList regionList = computeConnection.regions().list(projectId).setMaxResults(maxQueryResults).execute();
 			
 			if (regionList == null || regionList.getItems() == null) {
-				logger.info(logPrefix + "No regions found for project with id " + projectId);
+				logger.info("No regions found for project with id " + projectId);
 				return null;
 			} 
 			
-			logger.debug(logPrefix + "First poll of max " + maxQueryResults + " results returned a list of " 
+			logger.debug("First poll of max " + maxQueryResults + " results returned a list of " 
 				+ regionList.getItems().size() + " regions found for project with id " + projectId 
 				+ ": " + jsonMapper.writeValueAsString(regionList));
 				
 			/* Create a result list that will hold all regions retrieved from all polls */
-			RegionList allRegions = new RegionList();
-			allRegions.setItems(new ArrayList<Region>());
-			allRegions.getItems().addAll(regionList.getItems());
+			List<Object> allRegions = new ArrayList<Object>();
+			allRegions.addAll(regionList.getItems());
 			
 			/* If we received a "nextPageToken" it means that we have to page through all regions
 			 * as there are more regions than we retrieved due to the configured "MaxResults" parameter */
@@ -264,57 +327,56 @@ public class GoogleComputeEngineApi {
 						.execute();
 				
 				if (regionList == null || regionList.getItems() == null) {
-					logger.warn(logPrefix + "Error retrieving regions from GCE on poll page " + nrOfPolls 
-						+ ". Not returning an incomplete list of " + allRegions.getItems().size() + " regions retrieved so far!");
+					logger.warn("Error retrieving regions from GCE on poll page " + nrOfPolls 
+						+ ". Not returning an incomplete list of " + allRegions.size() + " regions retrieved so far!");
 					return null;
 				} 
 				
-				logger.debug(logPrefix + "Received next list of regions from GCE (page nr " + nrOfPolls + "): " + jsonMapper.writeValueAsString(regionList));
-				allRegions.getItems().addAll(regionList.getItems());
+				logger.debug("Received next list of regions from GCE (page nr " + nrOfPolls + "): " + jsonMapper.writeValueAsString(regionList));
+				allRegions.addAll(regionList.getItems());
 				nrOfPolls++;
 			}
 			
 			// To report the correct number of page polls
 			nrOfPolls--;
 			
-			logger.debug(logPrefix + "Finished retrieving the full list of " + allRegions.getItems().size() + " regions using " + nrOfPolls + " page polls");
+			logger.debug("Finished retrieving the full list of " + allRegions.size() + " regions using " + nrOfPolls + " page polls");
 			return allRegions;  
 			
 		} catch (Exception e) {
-			logger.error(logPrefix + "Error while trying to retrieve all regions for project with id " + projectId, e);
+			logger.error("Error while trying to retrieve all regions for project with id " + projectId, e);
 			return null;
 		} 
 	}
 	
 
-	public NetworkList retrieveAllNetworks(String projectId, String logPrefix) {
+	public List<Object> retrieveAllNetworks(String projectId) {
 
 		Compute computeConnection = computeConnections.get(projectId);
 		if (computeConnection == null) {
-			logger.warn(logPrefix + "Cannot retrieve any networks since there is no Compute connection for project " + projectId);
+			logger.warn("Cannot retrieve any networks since there is no Compute connection for project " + projectId);
 			return null;
 		}
 		
-		logPrefix += "\t";
-		logger.debug(logPrefix + "Retrieving all networks from project " + projectId);
+		
+		logger.debug("Retrieving all networks from project " + projectId);
 		
 		try {
 			// Retrieve all networks for the given project
 			NetworkList networkList = computeConnection.networks().list(projectId).setMaxResults(maxQueryResults).execute();
 			
 			if (networkList == null || networkList.getItems() == null) {
-				logger.info(logPrefix + "No network found for project with id " + projectId);
+				logger.info("No network found for project with id " + projectId);
 				return null;
 			} 
 				
-			logger.debug(logPrefix + "First poll of max " + maxQueryResults + " results returned a list of " 
+			logger.debug("First poll of max " + maxQueryResults + " results returned a list of " 
 					+ networkList.getItems().size() + " networks found for project with id " + projectId 
 					+ ": " + jsonMapper.writeValueAsString(networkList));
 				
 			/* Create a result list that will hold all networks retrieved from all polls */
-			NetworkList allNetworks = new NetworkList();
-			allNetworks.setItems(new ArrayList<Network>());
-			allNetworks.getItems().addAll(networkList.getItems());
+			List<Object> allNetworks = new ArrayList<Object>();
+			allNetworks.addAll(networkList.getItems());
 			
 			/* If we received a "nextPageToken" it means that we have to page through all networks
 			 * as there are more networks than we retrieved due to the configured "MaxResults" parameter */
@@ -329,39 +391,39 @@ public class GoogleComputeEngineApi {
 						.execute();
 				
 				if (networkList == null || networkList.getItems() == null) {
-					logger.warn(logPrefix + "Error retrieving networks from GCE on poll page " + nrOfPolls 
-						+ ". Not returning an incomplete list of " + allNetworks.getItems().size() + " networks retrieved so far!");
+					logger.warn("Error retrieving networks from GCE on poll page " + nrOfPolls 
+						+ ". Not returning an incomplete list of " + allNetworks.size() + " networks retrieved so far!");
 					return null;
 				} 
 				
-				logger.debug(logPrefix + "Received next list of networks from GCE (page nr " + nrOfPolls + "): " + jsonMapper.writeValueAsString(networkList));
-				allNetworks.getItems().addAll(networkList.getItems());
+				logger.debug("Received next list of networks from GCE (page nr " + nrOfPolls + "): " + jsonMapper.writeValueAsString(networkList));
+				allNetworks.addAll(networkList.getItems());
 				nrOfPolls++;
 			}
 			
 			// To report the correct number of page polls
 			nrOfPolls--;
 			
-			logger.debug(logPrefix + "Finished retrieving the full list of " + allNetworks.getItems().size() + " networks using " + nrOfPolls + " page polls");
+			logger.debug("Finished retrieving the full list of " + allNetworks.size() + " networks using " + nrOfPolls + " page polls");
 			return allNetworks;   
 			
 		} catch (Exception e) {
-			logger.error(logPrefix + "Error while trying to retrieve all networks for project with id " + projectId, e);
+			logger.error("Error while trying to retrieve all networks for project with id " + projectId, e);
 			return null;
 		} 
 	}
 	
 
-	public InstanceList retrieveInstancesForZone(String projectId, String zoneName, String logPrefix) {
+	public List<Object> retrieveInstancesForZone(String projectId, String zoneName) {
 
 		Compute computeConnection = computeConnections.get(projectId);
 		if (computeConnection == null) {
-			logger.warn(logPrefix + "Cannot retrieve any instances since there is no Compute connection for project " + projectId);
+			logger.warn("Cannot retrieve any instances since there is no Compute connection for project " + projectId);
 			return null;
 		}
 		
-		logPrefix += "\t";
-		logger.debug(logPrefix + "Retrieving all instances from zone " + zoneName + " and project " + projectId);
+		
+		logger.debug("Retrieving all instances from zone " + zoneName + " and project " + projectId);
 		
 		try {
 			// Retrieve instances for the given project and zone
@@ -373,24 +435,22 @@ public class GoogleComputeEngineApi {
 			 * return that empty list --> not an error --> simply no instances in that zone
 			 */
 			if (instanceList == null) {
-				logger.warn(logPrefix + "Retrieving the list of instances for project with id " + projectId + " within zone " + zoneName + " returned a null object!");
+				logger.warn("Retrieving the list of instances for project with id " + projectId + " within zone " + zoneName + " returned a null object!");
 				return null;
 			} 
 			
 			if (instanceList.getItems() == null) {
-				logger.debug(logPrefix + "No instances found for project with id " + projectId + " within zone " + zoneName);
-				instanceList.setItems(new ArrayList<Instance>());
-				return instanceList;
+				logger.debug("No instances found for project with id " + projectId + " within zone " + zoneName);
+				return new ArrayList<Object>();
 			} 
 
-			logger.debug(logPrefix + "First poll of max " + maxQueryResults + " results returned a list of " 
+			logger.debug("First poll of max " + maxQueryResults + " results returned a list of " 
 				+ instanceList.getItems().size() + " instances found for project with id " + projectId + " within zone " 
 				+ zoneName + ": " + jsonMapper.writeValueAsString(instanceList));
 			
 			/* Create a result list that will hold all instances retrieved from all polls */
-			InstanceList allInstances = new InstanceList();
-			allInstances.setItems(new ArrayList<Instance>());
-			allInstances.getItems().addAll(instanceList.getItems());
+			List<Object> allInstances = new ArrayList<Object>();
+			allInstances.addAll(instanceList.getItems());
 			
 			/* If we received a "nextPageToken" it means that we have to page through all instances
 			 * as there are more instances than we retrieved due to the configured "MaxResults" parameter */
@@ -405,39 +465,39 @@ public class GoogleComputeEngineApi {
 						.execute();
 				
 				if (instanceList == null || instanceList.getItems() == null) {
-					logger.warn(logPrefix + "Error retrieving instances from GCE on poll page " + nrOfPolls 
-						+ ". Not returning an incomplete list of " + allInstances.getItems().size() + " instances retrieved so far!");
+					logger.warn("Error retrieving instances from GCE on poll page " + nrOfPolls 
+						+ ". Not returning an incomplete list of " + allInstances.size() + " instances retrieved so far!");
 					return null;
 				} 
 				
-				logger.debug(logPrefix + "Received next list of instances from GCE (page nr " + nrOfPolls + "): " + jsonMapper.writeValueAsString(instanceList));
-				allInstances.getItems().addAll(instanceList.getItems());
+				logger.debug("Received next list of instances from GCE (page nr " + nrOfPolls + "): " + jsonMapper.writeValueAsString(instanceList));
+				allInstances.addAll(instanceList.getItems());
 				nrOfPolls++;
 			}
 			
 			// To report the correct number of page polls
 			nrOfPolls--;
 			
-			logger.debug(logPrefix + "Finished retrieving the full list of " + allInstances.getItems().size() + " instances using " + nrOfPolls + " page polls");
+			logger.debug("Finished retrieving the full list of " + allInstances.size() + " instances using " + nrOfPolls + " page polls");
 			return allInstances;     
 			
 		} catch (Exception e) {
-			logger.error(logPrefix + "Error while trying to retrieve all instances for project with id " + projectId + " within zone " + zoneName, e);
+			logger.error("Error while trying to retrieve all instances for project with id " + projectId + " within zone " + zoneName, e);
 			return null;
 		} 
 	}
 	
 	
-	public SubnetworkList retrieveSubnetworksForRegion(String projectId, String regionName, String logPrefix) {
+	public List<Object> retrieveSubnetworksForRegion(String projectId, String regionName) {
 
 		Compute computeConnection = computeConnections.get(projectId);
 		if (computeConnection == null) {
-			logger.warn(logPrefix + "Cannot retrieve any subnets since there is no Compute connection for project " + projectId);
+			logger.warn("Cannot retrieve any subnets since there is no Compute connection for project " + projectId);
 			return null;
 		}
 		
-		logPrefix += "\t";
-		logger.debug(logPrefix + "Retrieving all subnets from region " + regionName + " from project " + projectId);
+		
+		logger.debug("Retrieving all subnets from region " + regionName + " from project " + projectId);
 		
 		try {
 			// Retrieve subnetworks for the given project and region
@@ -445,18 +505,17 @@ public class GoogleComputeEngineApi {
 				.setMaxResults(maxQueryResults).execute();
 			
 			if (subnetworksList == null || subnetworksList.getItems() == null) {
-				logger.debug(logPrefix + "No subnetworks found for project with id " + projectId + " within region " + regionName);
+				logger.debug("No subnetworks found for project with id " + projectId + " within region " + regionName);
 				return null;
 			} 
 	
-			logger.debug(logPrefix + "First poll of max " + maxQueryResults + " results returned a list of " 
+			logger.debug("First poll of max " + maxQueryResults + " results returned a list of " 
 					+ subnetworksList.getItems().size() + " subnetworks found for project with id " + projectId + " within region " 
 					+ regionName + ": " + jsonMapper.writeValueAsString(subnetworksList));
 				
 			/* Create a result list that will hold all subnetworks retrieved from all polls */
-			SubnetworkList allSubnetworks = new SubnetworkList();
-			allSubnetworks.setItems(new ArrayList<Subnetwork>());
-			allSubnetworks.getItems().addAll(subnetworksList.getItems());
+			List<Object> allSubnetworks = new ArrayList<Object>();
+			allSubnetworks.addAll(subnetworksList.getItems());
 			
 			/* If we received a "nextPageToken" it means that we have to page through all subnetworks
 			 * as there are more subnetworks than we retrieved due to the configured "MaxResults" parameter */
@@ -471,24 +530,24 @@ public class GoogleComputeEngineApi {
 						.execute();
 				
 				if (subnetworksList == null || subnetworksList.getItems() == null) {
-					logger.warn(logPrefix + "Error retrieving subnetworks from GCE on poll page " + nrOfPolls 
-						+ ". Not returning an incomplete list of " + allSubnetworks.getItems().size() + " subnetworks retrieved so far!");
+					logger.warn("Error retrieving subnetworks from GCE on poll page " + nrOfPolls 
+						+ ". Not returning an incomplete list of " + allSubnetworks.size() + " subnetworks retrieved so far!");
 					return null;
 				} 
 				
-				logger.debug(logPrefix + "Received next list of subnetworks from GCE (page nr " + nrOfPolls + "): " + jsonMapper.writeValueAsString(subnetworksList));
-				allSubnetworks.getItems().addAll(subnetworksList.getItems());
+				logger.debug("Received next list of subnetworks from GCE (page nr " + nrOfPolls + "): " + jsonMapper.writeValueAsString(subnetworksList));
+				allSubnetworks.addAll(subnetworksList.getItems());
 				nrOfPolls++;
 			}
 			
 			// To report the correct number of page polls
 			nrOfPolls--;
 			
-			logger.debug(logPrefix + "Finished retrieving the full list of " + allSubnetworks.getItems().size() + " subnetworks using " + nrOfPolls + " page polls");
+			logger.debug("Finished retrieving the full list of " + allSubnetworks.size() + " subnetworks using " + nrOfPolls + " page polls");
 			return allSubnetworks;     
 			
 		} catch (Exception e) {
-			logger.error(logPrefix + "Error while trying to retrieve all subnetworks for project with id " + projectId + " within region " + regionName, e);
+			logger.error("Error while trying to retrieve all subnetworks for project with id " + projectId + " within region " + regionName, e);
 			return null;
 		} 
 	}
@@ -507,19 +566,19 @@ public class GoogleComputeEngineApi {
 	 * 					If set to false: will retrieve all rules (managed or not)
 	 * @return
 	 */
-	public FirewallList retrieveFirewalls(String projectId, String vpcName, boolean onlyRetrieveManagedRules, String logPrefix) {
+	public List<Object> retrieveFirewalls(String projectId, String vpcName, boolean onlyRetrieveManagedRules) {
 
 		Compute computeConnection = computeConnections.get(projectId);
 		if (computeConnection == null) {
-			logger.warn(logPrefix + "Cannot retrieve any firewalls since there is no Compute connection for project " + projectId);
+			logger.warn("Cannot retrieve any firewalls since there is no Compute connection for project " + projectId);
 			return null;
 		}
 		
-		logPrefix += "\t";
+		
 		if (onlyRetrieveManagedRules) {
-			logger.debug(logPrefix + "Retrieving only managed firewalls for VPC network " + vpcName + " from project " + projectId);
+			logger.debug("Retrieving only managed firewalls for VPC network " + vpcName + " from project " + projectId);
 		} else {
-			logger.debug(logPrefix + "Retrieving all firewalls for VPC network " + vpcName + " from project " + projectId);
+			logger.debug("Retrieving all firewalls for VPC network " + vpcName + " from project " + projectId);
 		}
 		
 		try {
@@ -531,7 +590,7 @@ public class GoogleComputeEngineApi {
 			if (vpcName == null || vpcName.isEmpty()) {
 				
 				if (onlyRetrieveManagedRules) {
-					logger.debug(logPrefix + "Retrieving all managed firewall rules for all VPC networks from project " + projectId);
+					logger.debug("Retrieving all managed firewall rules for all VPC networks from project " + projectId);
 					
 					firewallList = computeConnection.firewalls()
 							.list(projectId)
@@ -539,7 +598,7 @@ public class GoogleComputeEngineApi {
 							.setMaxResults(maxQueryResults)
 							.execute();		
 				} else {
-					logger.debug(logPrefix + "Retrieving all firewall rules for all VPC networks from project " + projectId);
+					logger.debug("Retrieving all firewall rules for all VPC networks from project " + projectId);
 					
 					firewallList = computeConnection.firewalls()
 							.list(projectId)
@@ -554,7 +613,7 @@ public class GoogleComputeEngineApi {
 				 * The actual name of the network is only found in the last part of the name after the last slash
 				 */
 				if (onlyRetrieveManagedRules) {
-					logger.debug(logPrefix + "Retrieving all managed firewall rules for VPC network " + vpcName + " from project " + projectId);
+					logger.debug("Retrieving all managed firewall rules for VPC network " + vpcName + " from project " + projectId);
 					
 					firewallList = computeConnection.firewalls()
 							.list(projectId)
@@ -562,7 +621,7 @@ public class GoogleComputeEngineApi {
 							.setMaxResults(maxQueryResults)
 							.execute();	
 				} else {
-					logger.debug(logPrefix + "Retrieving all firewall rules for VPC network " + vpcName + " from project " + projectId);
+					logger.debug("Retrieving all firewall rules for VPC network " + vpcName + " from project " + projectId);
 					
 					firewallList = computeConnection.firewalls()
 							.list(projectId)
@@ -574,20 +633,19 @@ public class GoogleComputeEngineApi {
 			
 			/* A null value at this point doesn't indicate an error but simply an empty list */
 			if (firewallList == null || firewallList.getItems() == null) {
-				logger.info(logPrefix + "No firewalls found for project with id " + projectId + " - VPC name filter: " + vpcName);
+				logger.info("No firewalls found for project with id " + projectId + " - VPC name filter: " + vpcName);
 				firewallList = new FirewallList();
 				firewallList.setItems(new ArrayList<Firewall>());
-				return firewallList;
+				return new ArrayList<Object>();
 			} 
 				
-			logger.debug(logPrefix + "First poll of max " + maxQueryResults + " results returned a list of " 
+			logger.debug("First poll of max " + maxQueryResults + " results returned a list of " 
 				+ firewallList.getItems().size() + " firewalls found for project with id " + projectId 
 				+ ": " + jsonMapper.writeValueAsString(firewallList));
 				
 			/* Create a result list that will hold all firewalls retrieved from all polls */
-			FirewallList allFirewalls = new FirewallList();
-			allFirewalls.setItems(new ArrayList<Firewall>());
-			allFirewalls.getItems().addAll(firewallList.getItems());
+			List<Object> allFirewalls = new ArrayList<Object>();
+			allFirewalls.addAll(firewallList.getItems());
 			
 			/* If we received a "nextPageToken" it means that we have to page through all firewalls
 			 * as there are more firewalls than we retrieved due to the configured "MaxResults" parameter */
@@ -602,24 +660,24 @@ public class GoogleComputeEngineApi {
 						.execute();
 				
 				if (firewallList == null || firewallList.getItems() == null) {
-					logger.warn(logPrefix + "Error retrieving firewalls from GCE on poll page " + nrOfPolls 
-						+ ". Not returning an incomplete list of " + allFirewalls.getItems().size() + " firewalls retrieved so far!");
+					logger.warn("Error retrieving firewalls from GCE on poll page " + nrOfPolls 
+						+ ". Not returning an incomplete list of " + allFirewalls.size() + " firewalls retrieved so far!");
 					return null;
 				} 
 				
-				logger.debug(logPrefix + "Received next list of firewalls from GCE (page nr " + nrOfPolls + "): " + jsonMapper.writeValueAsString(allFirewalls));
-				allFirewalls.getItems().addAll(firewallList.getItems());
+				logger.debug("Received next list of firewalls from GCE (page nr " + nrOfPolls + "): " + jsonMapper.writeValueAsString(allFirewalls));
+				allFirewalls.addAll(firewallList.getItems());
 				nrOfPolls++;
 			}
 			
 			// To report the correct number of page polls
 			nrOfPolls--;
 			
-			logger.debug(logPrefix + "Finished retrieving the full list of " + allFirewalls.getItems().size() + " firewalls using " + nrOfPolls + " page polls");
+			logger.debug("Finished retrieving the full list of " + allFirewalls.size() + " firewalls using " + nrOfPolls + " page polls");
 			return allFirewalls;  
 			
 		} catch (Exception e) {
-			logger.error(logPrefix + "Error while trying to retrieve all firewalls for project with id " + projectId, e);
+			logger.error("Error while trying to retrieve all firewalls for project with id " + projectId, e);
 			return null;
 		} 
 	}
@@ -635,48 +693,48 @@ public class GoogleComputeEngineApi {
 	 * 						- at least one allowed or one denied rule
 	 * @return				True on success, false on any error
 	 */
-	public boolean createFirewallRule(String projectId, Firewall fwRule, String logPrefix) {
+	public boolean createFirewallRule(String projectId, Firewall fwRule) {
 
 		Compute computeConnection = computeConnections.get(projectId);
 		if (computeConnection == null) {
-			logger.warn(logPrefix + "Cannot create firewall rule since there is no Compute connection for project " + projectId);
+			logger.warn("Cannot create firewall rule since there is no Compute connection for project " + projectId);
 			return false;
 		}
 		
-		logPrefix += "\t";
+		
 		
 		if (projectId == null || projectId.isEmpty()) {
-			logger.error(logPrefix + "Cannot create new firewall rule since no project id was provided");
+			logger.error("Cannot create new firewall rule since no project id was provided");
 			return false;
 		}
 		if (fwRule == null) {
-			logger.error(logPrefix + "Cannot create new firewall rule for project " + projectId + " since no firewall rule was provided");
+			logger.error("Cannot create new firewall rule for project " + projectId + " since no firewall rule was provided");
 			return false;
 		}
 		if (fwRule.getName() == null || fwRule.getName().isEmpty()) {
-			logger.error(logPrefix + "Cannot create new firewall rule for project " + projectId + " since the provided firewall rule is missing a name");
+			logger.error("Cannot create new firewall rule for project " + projectId + " since the provided firewall rule is missing a name");
 			return false;
 		}
 		if (fwRule.getNetwork() == null || fwRule.getNetwork().isEmpty()) {
-			logger.error(logPrefix + "Cannot create new firewall rule for project " + projectId + " with name " + fwRule.getName() + " since the provided firewall rule is missing the network id");
+			logger.error("Cannot create new firewall rule for project " + projectId + " with name " + fwRule.getName() + " since the provided firewall rule is missing the network id");
 			return false;
 		}
 		if (fwRule.getDirection() == null || fwRule.getDirection().isEmpty()) {
-			logger.error(logPrefix + "Cannot create new firewall rule for project " + projectId + " with name " + fwRule.getName() + " since the provided firewall rule is missing the direction");
+			logger.error("Cannot create new firewall rule for project " + projectId + " with name " + fwRule.getName() + " since the provided firewall rule is missing the direction");
 			return false;
 		}
 		if (
 				(fwRule.getAllowed() == null && fwRule.getDenied() == null) ||
 				(fwRule.getAllowed().size() == 0 && fwRule.getDenied().size() == 0))
 		{
-			logger.error(logPrefix + "Cannot create new firewall rule for project " + projectId + " with name " + fwRule.getName() + " since the provided firewall rule is missing rules");
+			logger.error("Cannot create new firewall rule for project " + projectId + " with name " + fwRule.getName() + " since the provided firewall rule is missing rules");
 			return false;
 		}
 		
 		try {
 			Operation fwInsertOperation = computeConnection.firewalls().insert(projectId, fwRule).execute();
 			if (fwInsertOperation == null) {
-				logger.error(logPrefix + "Failed to request the creation of a new firewall rule for project " + projectId 
+				logger.error("Failed to request the creation of a new firewall rule for project " + projectId 
 					+ " with name " + fwRule.getName() + " and network " + fwRule.getNetwork() + " initial request returned null");
 				return false;
 			}
@@ -693,7 +751,7 @@ public class GoogleComputeEngineApi {
 				
 				fwInsertOperation = computeConnection.globalOperations().get(projectId, fwInsertOperationId).execute();
 				if (fwInsertOperation == null) {
-					logger.error(logPrefix + "Error while requesting the current status of the operation to create a new firewall rule for project " 
+					logger.error("Error while requesting the current status of the operation to create a new firewall rule for project " 
 						+ projectId	+ " with name " + fwRule.getName() + " and network " + fwRule.getNetwork() + " - request returned null");
 					return false;
 				}
@@ -701,10 +759,10 @@ public class GoogleComputeEngineApi {
 				// Assumption: operation was successful if progress == 100% and status == DONE
 				if (fwInsertOperation.getProgress() == 100) {
 					if (fwInsertOperation.getStatus().equals("DONE")) {
-						logger.info(logPrefix + "Successfully created new firewall rule: " + jsonMapper.writeValueAsString(fwRule));
+						logger.info("Successfully created new firewall rule: " + jsonMapper.writeValueAsString(fwRule));
 						return true;
 					} else {
-						logger.error(logPrefix + "Error creating a new firewall rule for project " + projectId + " with name " 
+						logger.error("Error creating a new firewall rule for project " + projectId + " with name " 
 							+ fwRule.getName() + " and network " + fwRule.getNetwork() + " - progress is at 100% but the status doesn't equal 'DONE'" + jsonMapper.writeValueAsString(fwInsertOperation));
 						return false;
 					}
@@ -712,11 +770,11 @@ public class GoogleComputeEngineApi {
 			}
 			
 			// At this point the timeout has been reached - giving up - counting as creation error
-			logger.error(logPrefix + "Timeout while trying to create a new firewall rule for project " + projectId + " with name " + fwRule.getName() + " and network " + fwRule.getNetwork());
+			logger.error("Timeout while trying to create a new firewall rule for project " + projectId + " with name " + fwRule.getName() + " and network " + fwRule.getNetwork());
 			return false;
 			
 		} catch (Exception ex) {
-			logger.error(logPrefix + "Error while trying to create a new firewall rule for project " + projectId + " with name " + fwRule.getName() + " and network " + fwRule.getNetwork(), ex);
+			logger.error("Error while trying to create a new firewall rule for project " + projectId + " with name " + fwRule.getName() + " and network " + fwRule.getNetwork(), ex);
 			return false;
 		}
 	}
@@ -730,26 +788,26 @@ public class GoogleComputeEngineApi {
 	 * 						Cannot update/modify the associated network nor direction!
 	 * @return				True on success, false on any error
 	 */
-	public boolean updateFirewallRule(String projectId, Firewall fwRule, String logPrefix) {
+	public boolean updateFirewallRule(String projectId, Firewall fwRule) {
 
 		Compute computeConnection = computeConnections.get(projectId);
 		if (computeConnection == null) {
-			logger.warn(logPrefix + "Cannot update firewall rule since there is no Compute connection for project " + projectId);
+			logger.warn("Cannot update firewall rule since there is no Compute connection for project " + projectId);
 			return false;
 		}
 		
-		logPrefix += "\t";
+		
 		
 		if (projectId == null || projectId.isEmpty()) {
-			logger.error(logPrefix + "Cannot update firewall rule since no project id was provided");
+			logger.error("Cannot update firewall rule since no project id was provided");
 			return false;
 		}
 		if (fwRule == null) {
-			logger.error(logPrefix + "Cannot update firewall rule for project " + projectId + " since no firewall rule was provided");
+			logger.error("Cannot update firewall rule for project " + projectId + " since no firewall rule was provided");
 			return false;
 		}
 		if (fwRule.getName() == null || fwRule.getName().isEmpty()) {
-			logger.error(logPrefix + "Cannot update firewall rule for project " + projectId + " since the provided firewall rule is missing a name");
+			logger.error("Cannot update firewall rule for project " + projectId + " since the provided firewall rule is missing a name");
 			return false;
 		}
 		
@@ -757,7 +815,7 @@ public class GoogleComputeEngineApi {
 		try {
 			Operation fwUpdateOperation = computeConnection.firewalls().update(projectId, fwRule.getName(), fwRule).execute();
 			if (fwUpdateOperation == null) {
-				logger.error(logPrefix + "Failed to request the update of a firewall rule for project " + projectId 
+				logger.error("Failed to request the update of a firewall rule for project " + projectId 
 					+ " with name " + fwRule.getName() + " - initial request returned null");
 				return false;
 			}
@@ -774,7 +832,7 @@ public class GoogleComputeEngineApi {
 				
 				fwUpdateOperation = computeConnection.globalOperations().get(projectId, fwUpdateOperationId).execute();
 				if (fwUpdateOperation == null) {
-					logger.error(logPrefix + "Error while requesting the current status of the operation to update a irewall rule for project " 
+					logger.error("Error while requesting the current status of the operation to update a irewall rule for project " 
 						+ projectId	+ " with name " + fwRule.getName() + " - request returned null");
 					return false;
 				}
@@ -782,10 +840,10 @@ public class GoogleComputeEngineApi {
 				// Assumption: operation was successful if progress == 100% and status == DONE
 				if (fwUpdateOperation.getProgress() == 100) {
 					if (fwUpdateOperation.getStatus().equals("DONE")) {
-						logger.info(logPrefix + "Successfully updated firewall rule: " + jsonMapper.writeValueAsString(fwRule));
+						logger.info("Successfully updated firewall rule: " + jsonMapper.writeValueAsString(fwRule));
 						return true;
 					} else {
-						logger.error(logPrefix + "Error updating a firewall rule for project " + projectId + " with name " 
+						logger.error("Error updating a firewall rule for project " + projectId + " with name " 
 							+ fwRule.getName() + " - progress is at 100% but the status doesn't equal 'DONE'" + jsonMapper.writeValueAsString(fwUpdateOperation));
 						return false;
 					}
@@ -793,11 +851,11 @@ public class GoogleComputeEngineApi {
 			}
 			
 			// At this point the timeout has been reached - giving up - counting as update error
-			logger.error(logPrefix + "Timeout while trying to update a firewall rule for project " + projectId + " with name " + fwRule.getName());
+			logger.error("Timeout while trying to update a firewall rule for project " + projectId + " with name " + fwRule.getName());
 			return false;
 			
 		} catch (Exception ex) {
-			logger.error(logPrefix + "Error while trying to update a firewall rule for project " + projectId + " with name " + fwRule.getName(), ex);
+			logger.error("Error while trying to update a firewall rule for project " + projectId + " with name " + fwRule.getName(), ex);
 			return false;
 		}
 	}
@@ -809,29 +867,29 @@ public class GoogleComputeEngineApi {
 	 * @param fwRuleName	The firewall rule name is used to identify the firewall rule to delete
 	 * @return				True on success, false on any error
 	 */
-	public boolean deleteFirewallRule(String projectId, String fwRuleName, String logPrefix) {
+	public boolean deleteFirewallRule(String projectId, String fwRuleName) {
 
 		Compute computeConnection = computeConnections.get(projectId);
 		if (computeConnection == null) {
-			logger.warn(logPrefix + "Cannot delete firewall rule since there is no Compute connection for project " + projectId);
+			logger.warn("Cannot delete firewall rule since there is no Compute connection for project " + projectId);
 			return false;
 		}
 		
-		logPrefix += "\t";
+		
 		
 		if (projectId == null || projectId.isEmpty()) {
-			logger.error(logPrefix + "Cannot delete a firewall rule since no project id was provided");
+			logger.error("Cannot delete a firewall rule since no project id was provided");
 			return false;
 		}
 		if (fwRuleName == null || fwRuleName.isEmpty()) {
-			logger.error(logPrefix + "Cannot delete a firewall rule from project " + projectId + " since no firewall rule name was provided");
+			logger.error("Cannot delete a firewall rule from project " + projectId + " since no firewall rule name was provided");
 			return false;
 		}
 		
 		try {
 			Operation fwDeleteOperation = computeConnection.firewalls().delete(projectId, fwRuleName).execute();
 			if (fwDeleteOperation == null) {
-				logger.error(logPrefix + "Failed to request the deletion of a firewall rule for project " + projectId 
+				logger.error("Failed to request the deletion of a firewall rule for project " + projectId 
 					+ " with name " + fwRuleName + " - initial request returned null");
 				return false;
 			}
@@ -848,7 +906,7 @@ public class GoogleComputeEngineApi {
 				
 				fwDeleteOperation = computeConnection.globalOperations().get(projectId, fwDeleteOperationId).execute();
 				if (fwDeleteOperation == null) {
-					logger.error(logPrefix + "Error while requesting the current status of the operation to delete a firewall rule for project " 
+					logger.error("Error while requesting the current status of the operation to delete a firewall rule for project " 
 						+ projectId	+ " with name " + fwRuleName + " - request returned null");
 					return false;
 				}
@@ -856,10 +914,10 @@ public class GoogleComputeEngineApi {
 				// Assumption: operation was successful if progress == 100% and status == DONE
 				if (fwDeleteOperation.getProgress() == 100) {
 					if (fwDeleteOperation.getStatus().equals("DONE")) {
-						logger.info(logPrefix + "Successfully deleted firewall rule: " + fwRuleName + " from project " + projectId);
+						logger.info("Successfully deleted firewall rule: " + fwRuleName + " from project " + projectId);
 						return true;
 					} else {
-						logger.error(logPrefix + "Error deleting a firewall rule from project " + projectId + " with name " 
+						logger.error("Error deleting a firewall rule from project " + projectId + " with name " 
 							+ fwRuleName + " - progress is at 100% but the status doesn't equal 'DONE'" + jsonMapper.writeValueAsString(fwDeleteOperation));
 						return false;
 					}
@@ -867,11 +925,11 @@ public class GoogleComputeEngineApi {
 			}
 			
 			// At this point the timeout has been reached - giving up - counting as deletion error
-			logger.error(logPrefix + "Timeout while trying to delete a firewall rule from project " + projectId + " with name " + fwRuleName);
+			logger.error("Timeout while trying to delete a firewall rule from project " + projectId + " with name " + fwRuleName);
 			return false;
 			
 		} catch (Exception ex) {
-			logger.error(logPrefix + "Error while trying to delete a firewall rule from project " + projectId + " with name " + fwRuleName, ex);
+			logger.error("Error while trying to delete a firewall rule from project " + projectId + " with name " + fwRuleName, ex);
 			return false;
 		}
 	}
@@ -886,30 +944,30 @@ public class GoogleComputeEngineApi {
 	 * @param tags			List of tags to set for the instance		
 	 * @return				True on success, false on any error
 	 */
-	public boolean setInstanceTags(String projectId, String zone, String instanceName, ArrayList<String> tags, String logPrefix) {
+	public boolean setInstanceTags(String projectId, String zone, String instanceName, ArrayList<String> tags) {
 
 		Compute computeConnection = computeConnections.get(projectId);
 		if (computeConnection == null) {
-			logger.warn(logPrefix + "Cannot update instance tags since there is no Compute connection for project " + projectId);
+			logger.warn("Cannot update instance tags since there is no Compute connection for project " + projectId);
 			return false;
 		}
 		
-		logPrefix += "\t";
+		
 		
 		if (projectId == null || projectId.isEmpty()) {
-			logger.error(logPrefix + "Cannot set the network tags on an instance since no project id was provided");
+			logger.error("Cannot set the network tags on an instance since no project id was provided");
 			return false;
 		}
 		if (zone == null || zone.isEmpty()) {
-			logger.error(logPrefix + "Cannot set the network tags on an instance for project " + projectId + " since no zone was provided");
+			logger.error("Cannot set the network tags on an instance for project " + projectId + " since no zone was provided");
 			return false;
 		}
 		if (instanceName == null || instanceName.isEmpty()) {
-			logger.error(logPrefix + "Cannot set the network tags on an instance for project " + projectId + " and zone " + zone + " since no instance name was provided");
+			logger.error("Cannot set the network tags on an instance for project " + projectId + " and zone " + zone + " since no instance name was provided");
 			return false;
 		}
 		if (tags == null) { // an empty list of tags is a valid use case --> would clear the list of tags
-			logger.error(logPrefix + "Cannot set the network tags on instance " + instanceName + " for project " + projectId + " and zone " + zone + " since the list of tags is missing");
+			logger.error("Cannot set the network tags on instance " + instanceName + " for project " + projectId + " and zone " + zone + " since the list of tags is missing");
 			return false;
 		}
 		
@@ -920,12 +978,12 @@ public class GoogleComputeEngineApi {
 			Instance instance = computeConnection.instances().get(projectId, zone, instanceName).execute();
 			
 			if (instance == null) {
-				logger.warn(logPrefix + "Could not retrieve data on instance " + instanceName + " from project " + projectId 
+				logger.warn("Could not retrieve data on instance " + instanceName + " from project " + projectId 
 					+ " and zone " + zone + " --> won't be able to update its tags");
 				return false;
 			}
 			
-	        logger.debug(logPrefix + "Retrieved details on instance " + instanceName + " from project " + projectId 
+	        logger.debug("Retrieved details on instance " + instanceName + " from project " + projectId 
 					+ " and zone " + zone + " to prepare updating its tags: " + jsonMapper.writeValueAsString(instance));
 	        
 	        /* Second: build the new Tags object that contains the current fingerprint value just retrieved from this instance */
@@ -941,7 +999,7 @@ public class GoogleComputeEngineApi {
 	        Operation setTagsOperation = computeConnection.instances().setTags(projectId, zone, instanceName, tagsToSet).execute();
 	       
 	        if (setTagsOperation == null) {
-	            logger.warn(logPrefix + "No feedback from GCE when trying to set the tags on instance " + instanceName + 
+	            logger.warn("No feedback from GCE when trying to set the tags on instance " + instanceName + 
 	            	" from project " + projectId + " and zone " + zone + ". Instance details: " + jsonMapper.writeValueAsString(instance));
 	            return false;
 	        } 
@@ -958,7 +1016,7 @@ public class GoogleComputeEngineApi {
 				
 				setTagsOperation = computeConnection.zoneOperations().get(projectId, zone, setTagsOperationId).execute();
 				if (setTagsOperation == null) {
-					logger.error(logPrefix + "Error while requesting the current status of the operation to set new tags (" 
+					logger.error("Error while requesting the current status of the operation to set new tags (" 
 						+ tags + ") for project " + projectId	+ ", zone " + zone + " and for instance " + instanceName 
 						+ " - request returned null");
 					return false;
@@ -967,11 +1025,11 @@ public class GoogleComputeEngineApi {
 				// Assumption: operation was successful if progress == 100% and status == DONE
 				if (setTagsOperation.getProgress() == 100) {
 					if (setTagsOperation.getStatus().equals("DONE")) {
-						logger.info(logPrefix + "Successfully updated tags on instance " + instanceName + " from project " 
+						logger.info("Successfully updated tags on instance " + instanceName + " from project " 
 							+ projectId	+ " in zone " + zone + ": " + tags); 
 						return true;
 					} else {
-						logger.error(logPrefix + "Error updating the network tags (" 
+						logger.error("Error updating the network tags (" 
 								+ tags + ") for project " + projectId	+ ", zone " + zone + " and for instance " + instanceName 
 								+ " - progress is at 100% but the status doesn't equal 'DONE'" + jsonMapper.writeValueAsString(setTagsOperation));
 						return false;
@@ -980,12 +1038,12 @@ public class GoogleComputeEngineApi {
 			}
 			
 			// At this point the timeout has been reached - giving up - counting as creation error
-			logger.error(logPrefix + "Timeout while trying to update the network tags for instance " + instanceName + 
+			logger.error("Timeout while trying to update the network tags for instance " + instanceName + 
 				" within project " + projectId + ", zone " + zone + ": " + tags);
 			return false;
 			
 		} catch (Exception ex) {
-			logger.error(logPrefix + "Error while trying to set the tags on instance " + instanceName + 
+			logger.error("Error while trying to set the tags on instance " + instanceName + 
 	            	" from project " + projectId + " and zone " + zone, ex);
 			return false;
 		}

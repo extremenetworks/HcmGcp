@@ -1,6 +1,7 @@
 package com.extremenetworks.hcm.gcp.mgr;
 
 import java.util.ArrayList;
+import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -35,28 +36,28 @@ public class GoogleComputeEngineManager {
 	}
 	
 
-	public ZoneList retrieveAllZones(String projectId, String logPrefix) {
-		return computeApi.retrieveAllZones(projectId, logPrefix);
+	public List<Object> retrieveAllZones(String projectId) {
+		return computeApi.retrieveAllZones(projectId);
 	}
 	
 	
-	public RegionList retrieveAllRegions(String projectId, String logPrefix) {
-		return computeApi.retrieveAllRegions(projectId, logPrefix);
+	public List<Object> retrieveAllRegions(String projectId) {
+		return computeApi.retrieveAllRegions(projectId);
 	}
 
 	
-	public NetworkList retrieveAllNetworks(String projectId, String logPrefix) {
-		return computeApi.retrieveAllNetworks(projectId, logPrefix);
+	public List<Object> retrieveAllNetworks(String projectId) {
+		return computeApi.retrieveAllNetworks(projectId);
 	}
 	
 
-	public InstanceList getInstancesForZone(String projectId, String zoneName, String logPrefix) {
-		return computeApi.retrieveInstancesForZone(projectId, zoneName, logPrefix);
+	public List<Object> retrieveInstancesForZone(String projectId, String zoneName) {
+		return computeApi.retrieveInstancesForZone(projectId, zoneName);
 	}
 	
 	
-	public SubnetworkList retrieveSubnetworksForRegion(String projectId, String regionName, String logPrefix) {
-		return computeApi.retrieveSubnetworksForRegion(projectId, regionName, logPrefix);
+	public List<Object> retrieveSubnetworksForRegion(String projectId, String regionName) {
+		return computeApi.retrieveSubnetworksForRegion(projectId, regionName);
 	}
 
 
@@ -73,8 +74,8 @@ public class GoogleComputeEngineManager {
 	 * 					If set to false: will retrieve all rules (managed or not)
 	 * @return
 	 */
-	public FirewallList retrieveFirewalls(String projectId, String vpcName, boolean onlyRetrieveManagedRules, String logPrefix) {
-		return computeApi.retrieveFirewalls(projectId, vpcName, onlyRetrieveManagedRules, logPrefix);
+	public List<Object> retrieveFirewalls(String projectId, String vpcName, boolean onlyRetrieveManagedRules) {
+		return computeApi.retrieveFirewalls(projectId, vpcName, onlyRetrieveManagedRules);
 	}
 	
 
@@ -88,8 +89,8 @@ public class GoogleComputeEngineManager {
 	 * 						- at least one allowed or one denied rule
 	 * @return				True on success, false on any error
 	 */
-	public boolean createFirewallRule(String projectId, Firewall fwRule, String logPrefix) {
-		return computeApi.createFirewallRule(projectId, fwRule, logPrefix);
+	public boolean createFirewallRule(String projectId, Firewall fwRule) {
+		return computeApi.createFirewallRule(projectId, fwRule);
 	}
 			
 	
@@ -101,8 +102,8 @@ public class GoogleComputeEngineManager {
 	 * 						Cannot update/modify the associated network nor direction!
 	 * @return				True on success, false on any error
 	 */
-	public boolean updateFirewallRule(String projectId, Firewall fwRule, String logPrefix) {
-		return computeApi.updateFirewallRule(projectId, fwRule, logPrefix);
+	public boolean updateFirewallRule(String projectId, Firewall fwRule) {
+		return computeApi.updateFirewallRule(projectId, fwRule);
 	}
 			
 
@@ -112,8 +113,8 @@ public class GoogleComputeEngineManager {
 	 * @param fwRuleName	The firewall rule name is used to identify the firewall rule to delete
 	 * @return				True on success, false on any error
 	 */
-	public boolean deleteFirewallRule(String projectId, String fwRuleName, String logPrefix) {
-		return computeApi.deleteFirewallRule(projectId, fwRuleName, logPrefix);
+	public boolean deleteFirewallRule(String projectId, String fwRuleName) {
+		return computeApi.deleteFirewallRule(projectId, fwRuleName);
 	}
 			
 	
@@ -126,8 +127,8 @@ public class GoogleComputeEngineManager {
 	 * @param tags			List of tags to set for the instance		
 	 * @return				True on success, false on any error
 	 */
-	public boolean setInstanceTags(String projectId, String zone, String instanceName, ArrayList<String> tags, String logPrefix) {
-		return computeApi.setInstanceTags(projectId, zone, instanceName, tags, logPrefix);
+	public boolean setInstanceTags(String projectId, String zone, String instanceName, ArrayList<String> tags) {
+		return computeApi.setInstanceTags(projectId, zone, instanceName, tags);
 	}
 	
 
