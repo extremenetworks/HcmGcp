@@ -84,6 +84,7 @@ public class ResourceRes {
     @POST
     @Path("triggerUpdate")
     @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
     public String triggerUpdateAllResources(
     		String authFileContent,
     		@QueryParam("projectId") String projectId) {

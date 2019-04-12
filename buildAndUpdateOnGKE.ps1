@@ -2,6 +2,7 @@
 Set-Location $PSScriptRoot
 
 # Build the app
+Write-Host "$(Get-Date -Format HH:mm:ss.fff) Building the app" -ForegroundColor Green
 mvn clean package
 if ($LastExitCode -ne 0) {
     Write-Host "Error: mvn clean package" -ForegroundColor Red
@@ -20,7 +21,7 @@ $majorBuildVersion = Select-String -Path .\build.version -Pattern '^\d+\.\d+\.' 
 
 # Concat existing major with new minor version
 $version = $majorBuildVersion + $minorBuildVersion
-Write-Host "Building new container image with version $version" -ForegroundColor Green
+Write-Host "$(Get-Date -Format HH:mm:ss.fff) Building new container image with version $version" -ForegroundColor Green
 
 # Build and push the Docker container
 docker.exe build -q -t kurts/ng_hcm_gcp_mgr:$version .
@@ -32,10 +33,11 @@ $version | Out-File -FilePath build.version
 
 # Update the container to the newest image on the deployment on GKE
 # deployment name, then container name and finally new image with version tag
+Write-Host "$(Get-Date -Format HH:mm:ss.fff) Updating the container image for the kubernetes deployment" -ForegroundColor Green
 kubectl.exe set image deployment/hcm-gcp hcm-gcp=kurts/ng_hcm_gcp_mgr:$version
 
 # Wait for GKE to deploy the new container using the new image
-Write-Host "Waiting 15 seconds for the container to start and attaching to its logs" -ForegroundColor Green
+Write-Host "$(Get-Date -Format HH:mm:ss.fff) Waiting 15 seconds for the container to start and attaching to its logs" -ForegroundColor Green
 Start-Sleep 15
 
 # Attach to the new container's log output
