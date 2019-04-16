@@ -39,6 +39,7 @@ import com.google.api.services.compute.model.Zone;
 import com.google.api.services.compute.model.ZoneList;
 import com.google.api.services.cloudbilling.Cloudbilling;
 import com.google.api.services.cloudbilling.model.ProjectBillingInfo;
+import com.google.api.services.cloudbilling.CloudbillingScopes;
 
 public class GoogleComputeEngineApi {
 
@@ -87,8 +88,15 @@ public class GoogleComputeEngineApi {
 			InputStream credFileInputStream = new ByteArrayInputStream(
 					authFileContent.getBytes(StandardCharsets.UTF_8));
 
-			credential = GoogleCredential.fromStream(credFileInputStream)
-					.createScoped(Collections.singleton(ComputeScopes.COMPUTE));
+			List<String> authScopes = new ArrayList<String>();
+			authScopes.add(ComputeScopes.COMPUTE);
+			authScopes.add(CloudbillingScopes.CLOUD_PLATFORM);
+
+			credential = GoogleCredential.fromStream(credFileInputStream).createScoped(authScopes);
+
+			// credential = GoogleCredential.fromStream(credFileInputStream)
+			// .createScoped(Collections.(ComputeScopes.COMPUTE,
+			// CloudbillingScopes.CLOUD_PLATFORM));
 		} catch (Exception ex) {
 			logger.error("Error loading the credentials JSON file content for authorizing against the GCP project "
 					+ projectId, ex);
