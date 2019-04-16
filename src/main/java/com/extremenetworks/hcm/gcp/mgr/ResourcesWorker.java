@@ -63,7 +63,7 @@ public class ResourcesWorker implements Runnable {
 	@Override
 	public void run() {
 
-		logger.debug("Starting Background worker to import data from GCP for project with ID " + projectId);
+		logger.debug("Starting Background worker to import compute data from GCP for project with ID " + projectId);
 
 		try {
 			GoogleComputeEngineManager computeManager = new GoogleComputeEngineManager();

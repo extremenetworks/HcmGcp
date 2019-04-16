@@ -111,7 +111,7 @@ public class ResourceRes {
 			}
 
 			/* Config and start the background worker */
-			logger.debug("Creating background worker to import data from GPC project " + projectId);
+			logger.debug("Creating background worker to import compute data from GPC project " + projectId);
 
 			executor.execute(new ResourcesWorker(projectId, authFileContent, RABBIT_QUEUE_NAME, rabbitChannel));
 

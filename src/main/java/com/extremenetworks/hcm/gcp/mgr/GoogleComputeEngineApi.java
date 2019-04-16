@@ -1016,8 +1016,9 @@ public class GoogleComputeEngineApi {
 				return null;
 			}
 
-			logger.debug("Billing info: " + response.toPrettyString());
-
+//			logger.debug("Successfully retrieved billing info: " + response.toPrettyString());
+			logger.debug("Successfully retrieved billing info: " + jsonMapper.writeValueAsString(response));
+			
 			return response;
 
 		} catch (Exception e) {
