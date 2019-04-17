@@ -29,6 +29,7 @@ public class BillingRes {
 	private static ObjectMapper jsonMapper = new ObjectMapper();
 	private static final JsonFactory jsonFactory = new JsonFactory();
 	
+	private final String rabbitServer = "hcm-rabbit-mq";
 	private final static String RABBIT_QUEUE_NAME = "gcp.resources";
 	private static Channel rabbitChannel;
 
@@ -44,11 +45,11 @@ public class BillingRes {
 		
 		try {
 			ConnectionFactory factory = new ConnectionFactory();
-			factory.setHost("rabbit-mq");
+			factory.setHost(rabbitServer);
 
 			Connection connection = factory.newConnection();
 			rabbitChannel = connection.createChannel();
-			rabbitChannel.queueDeclare(RABBIT_QUEUE_NAME, false, false, false, null);
+			rabbitChannel.queueDeclare(RABBIT_QUEUE_NAME, true, false, false, null);
 			
 			executor = Executors.newCachedThreadPool();
 			
@@ -85,7 +86,7 @@ public class BillingRes {
     @Path("triggerUpdate")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public String triggerUpdateAllResources(
+    public String triggerUpdateAll(
     		String authFileContent,
     		@QueryParam("projectId") String projectId) {
 
@@ -109,7 +110,7 @@ public class BillingRes {
             		new ResourcesWebResponse(0, "Successfully triggered an update of all billing data"));
             
     	} catch (Exception ex) {
-    		logger.error("Error parsing parameters and trying to setup the background worker to trigger an update on all resources", ex);
+    		logger.error("Error parsing parameters and trying to setup the background worker to trigger an update on all billing data", ex);
     		return "";
     	}
     }

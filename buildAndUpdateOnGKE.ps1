@@ -1,3 +1,6 @@
+# Memorize script start time
+$ScriptStartTime = (Get-Date)
+
 # Change to directory of the powershell script itself
 Set-Location $PSScriptRoot
 
@@ -35,6 +38,10 @@ $version | Out-File -FilePath build.version
 # deployment name, then container name and finally new image with version tag
 Write-Host "$(Get-Date -Format HH:mm:ss.fff) Updating the container image for the kubernetes deployment" -ForegroundColor Green
 kubectl.exe set image deployment/hcm-gcp hcm-gcp=kurts/ng_hcm_gcp_mgr:$version
+
+# Show time passed since script started
+$ScriptStopTime = (Get-Date)
+Write-Host "$(Get-Date -Format HH:mm:ss.fff) Overall script execution time: $(New-Timespan -Start $ScriptStartTime -End $ScriptStopTime)" -ForegroundColor Green
 
 # Wait for GKE to deploy the new container using the new image
 Write-Host "$(Get-Date -Format HH:mm:ss.fff) Waiting 15 seconds for the container to start and attaching to its logs" -ForegroundColor Green

@@ -29,6 +29,7 @@ public class ResourceRes {
 	private static ObjectMapper jsonMapper = new ObjectMapper();
 	private static final JsonFactory jsonFactory = new JsonFactory();
 
+	private final String rabbitServer = "hcm-rabbit-mq";
 	private final static String RABBIT_QUEUE_NAME = "gcp.resources";
 	private static Channel rabbitChannel;
 
@@ -44,11 +45,11 @@ public class ResourceRes {
 
 		try {
 			ConnectionFactory factory = new ConnectionFactory();
-			factory.setHost("rabbit-mq");
+			factory.setHost(rabbitServer);
 
 			Connection connection = factory.newConnection();
 			rabbitChannel = connection.createChannel();
-			rabbitChannel.queueDeclare(RABBIT_QUEUE_NAME, false, false, false, null);
+			rabbitChannel.queueDeclare(RABBIT_QUEUE_NAME, true, false, false, null);
 
 			executor = Executors.newCachedThreadPool();
 

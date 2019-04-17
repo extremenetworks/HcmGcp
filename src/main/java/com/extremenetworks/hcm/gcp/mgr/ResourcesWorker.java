@@ -78,8 +78,6 @@ public class ResourcesWorker implements Runnable {
 
 			java.sql.Connection dbConn = DriverManager.getConnection(dbConnString, dbUser, dbPassword);
 
-			computeManager.retrieveBillingInfo(projectId);
-
 			/* Zones */
 			List<Object> allZones = computeManager.retrieveAllZones(projectId);
 			if (allZones == null || allZones.isEmpty()) {

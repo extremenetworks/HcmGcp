@@ -84,7 +84,7 @@ public class BillingWorker implements Runnable {
 //			writeToDb(dbConn, "Firewall", allFirewalls);
 //			publishToRabbitMQ("Firewall", allFirewalls);
 
-			logger.debug("Finished retrieving all resources from GCP project " + projectId);
+			logger.debug("Finished retrieving all billing data from GCP project " + projectId);
 
 		} catch (Exception ex) {
 			logger.error(ex);
