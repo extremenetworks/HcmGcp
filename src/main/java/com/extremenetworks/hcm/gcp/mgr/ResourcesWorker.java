@@ -16,6 +16,7 @@ import com.fasterxml.jackson.core.JsonEncoding;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.api.services.compute.model.Instance;
 import com.google.api.services.compute.model.Region;
 import com.google.api.services.compute.model.Zone;
 import com.google.api.services.compute.model.ZoneList;
@@ -123,7 +124,7 @@ public class ResourcesWorker implements Runnable {
 				}
 
 				writeToDb(dbConn, "VM", allInstances);
-				publishToRabbitMQ("VM", allInstances);
+				publishBasicDataToRabbitMQ("VM", allInstances);
 			}
 
 			/* Subnets */
@@ -237,11 +238,55 @@ public class ResourcesWorker implements Runnable {
 			jsonGen.close();
 			outputStream.close();
 
-			logger.debug("Forwarding updated list of " + resourceType + "s to the message queue " + RABBIT_QUEUE_NAME); // +
-																														// ":
-																														// "
-																														// +
-																														// outputStream.toString());
+			logger.debug("Forwarding updated list of " + resourceType + "s to the message queue " + RABBIT_QUEUE_NAME); 
+			rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null, outputStream.toString().getBytes("UTF-8"));
+
+			return true;
+
+		} catch (Exception ex) {
+			logger.error("Error trying to publish resource data to RabbitMQ", ex);
+			return false;
+		}
+
+	}
+	
+
+	private boolean publishBasicDataToRabbitMQ(String resourceType, List<Object> data) {
+
+		if (data == null || data.isEmpty()) {	return false;	}
+		
+		try {
+			Date now = new Date();
+			String lastUpdate = dateFormatter.format(now);
+			
+			ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+			JsonGenerator jsonGen = jsonFactory.createGenerator(outputStream, JsonEncoding.UTF8);
+
+			jsonGen.writeStartArray();
+			
+			if (resourceType.equals("VM")) {
+				
+				List<Instance> vms = (List<Instance>)(List<?>) data;
+				
+				for (Instance vm: vms) {
+					
+					jsonGen.writeStartObject();
+					
+					jsonGen.writeStringField("srcSysType", "GCP");
+					jsonGen.writeStringField("resourceType", "VM");
+					jsonGen.writeStringField("id", vm.getId().toString());
+					jsonGen.writeStringField("lastUpdate", lastUpdate);
+					
+					jsonGen.writeEndObject();
+				};
+			}			
+
+			jsonGen.writeEndArray();
+			
+			jsonGen.close();
+			outputStream.close();
+
+			logger.debug("Forwarding updated list of " + resourceType + "s to the message queue " + RABBIT_QUEUE_NAME); 
 			rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null, outputStream.toString().getBytes("UTF-8"));
 
 			return true;
