@@ -16,6 +16,7 @@ import com.fasterxml.jackson.core.JsonEncoding;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.api.services.compute.model.Firewall;
 import com.google.api.services.compute.model.Instance;
 import com.google.api.services.compute.model.Region;
 import com.google.api.services.compute.model.Zone;
@@ -89,7 +90,8 @@ public class ResourcesWorker implements Runnable {
 			}
 
 			writeToDb(dbConn, "Zone", allZones);
-			publishToRabbitMQ("Zone", allZones);
+			publishBasicDataToRabbitMQ("Zone", allZones);
+//			publishToRabbitMQ("Zone", allZones);
 
 			/* Regions */
 			List<Object> allRegions = computeManager.retrieveAllRegions(projectId);
@@ -101,7 +103,7 @@ public class ResourcesWorker implements Runnable {
 			}
 
 			writeToDb(dbConn, "Region", allRegions);
-			publishToRabbitMQ("Region", allRegions);
+//			publishToRabbitMQ("Region", allRegions);
 
 			/* Instances */
 			if (allZones != null && !allZones.isEmpty()) {
@@ -120,6 +122,7 @@ public class ResourcesWorker implements Runnable {
 						return;
 					}
 
+//					logger.debug("Found " + instancesFromZone.size() + " instances from zone " + zone);
 					allInstances.addAll(instancesFromZone);
 				}
 
@@ -149,7 +152,7 @@ public class ResourcesWorker implements Runnable {
 				}
 
 				writeToDb(dbConn, "Subnet", allSubnets);
-				publishToRabbitMQ("Subnet", allSubnets);
+//				publishToRabbitMQ("Subnet", allSubnets);
 			}
 
 			/* Firewalls */
@@ -162,7 +165,8 @@ public class ResourcesWorker implements Runnable {
 			}
 
 			writeToDb(dbConn, "Firewall", allFirewalls);
-			publishToRabbitMQ("Firewall", allFirewalls);
+			publishBasicDataToRabbitMQ("Firewall", allFirewalls);
+//			publishToRabbitMQ("Firewall", allFirewalls);
 
 			logger.debug("Finished retrieving all resources from GCP project " + projectId);
 
@@ -272,9 +276,62 @@ public class ResourcesWorker implements Runnable {
 					
 					jsonGen.writeStartObject();
 					
+					// Extra Data field
+					String machineType = vm.getMachineType().substring(vm.getMachineType().indexOf("/machineTypes/") + "/machineTypes/".length());
+					String zone = vm.getZone().substring(vm.getZone().indexOf("/zones/") + "/zones/".length());
+					String extraData = "Type: " + machineType + ", Status: " + vm.getStatus() + ", Zone: " + zone;
+							
+					jsonGen.writeStringField("name", vm.getName());
 					jsonGen.writeStringField("srcSysType", "GCP");
-					jsonGen.writeStringField("resourceType", "VM");
+					jsonGen.writeStringField("resourceType", resourceType);
+					jsonGen.writeStringField("extraData", extraData);
 					jsonGen.writeStringField("id", vm.getId().toString());
+					jsonGen.writeStringField("lastUpdate", lastUpdate);
+					
+					jsonGen.writeEndObject();
+				};
+			}			
+
+			else if (resourceType.equals("Firewall")) {
+				
+				List<Firewall> firewalls = (List<Firewall>)(List<?>) data;
+				
+				for (Firewall fw: firewalls) {
+					
+					jsonGen.writeStartObject();
+					
+					// Extra Data field
+					String network = fw.getNetwork().substring(fw.getNetwork().indexOf("/networks/") + "/networks/".length());
+					String extraData = "Description: " + fw.getDescription() + ", Network: " + network + ", Direction: " + fw.getDirection();
+					
+					jsonGen.writeStringField("name", fw.getName());
+					jsonGen.writeStringField("srcSysType", "GCP");
+					jsonGen.writeStringField("resourceType", resourceType);
+					jsonGen.writeStringField("extraData", extraData);
+					jsonGen.writeStringField("id", fw.getId().toString());
+					jsonGen.writeStringField("lastUpdate", lastUpdate);
+					
+					jsonGen.writeEndObject();
+				};
+			}			
+
+			else if (resourceType.equals("Zone")) {
+				
+				List<Zone> zones = (List<Zone>)(List<?>) data;
+				
+				for (Zone zone: zones) {
+					
+					jsonGen.writeStartObject();
+
+					// Extra Data field
+					String region = zone.getRegion().substring(zone.getRegion().indexOf("/regions/") + "/regions/".length());
+					String extraData = "Description: " + zone.getDescription() + ", Status: " + zone.getStatus() + ", Region: " + region;
+					
+					jsonGen.writeStringField("name", zone.getName());
+					jsonGen.writeStringField("srcSysType", "GCP");
+					jsonGen.writeStringField("resourceType", resourceType);
+					jsonGen.writeStringField("extraData", extraData);
+					jsonGen.writeStringField("id", zone.getId().toString());
 					jsonGen.writeStringField("lastUpdate", lastUpdate);
 					
 					jsonGen.writeEndObject();
