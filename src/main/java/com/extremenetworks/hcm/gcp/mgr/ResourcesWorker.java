@@ -18,7 +18,9 @@ import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.api.services.compute.model.Firewall;
 import com.google.api.services.compute.model.Instance;
+import com.google.api.services.compute.model.NetworkInterface;
 import com.google.api.services.compute.model.Region;
+import com.google.api.services.compute.model.Subnetwork;
 import com.google.api.services.compute.model.Zone;
 import com.google.api.services.compute.model.ZoneList;
 import com.rabbitmq.client.Channel;
@@ -44,6 +46,7 @@ public class ResourcesWorker implements Runnable {
 	// Helpers / Utilities
 	private static final JsonFactory jsonFactory = new JsonFactory();
 	private final SimpleDateFormat dateFormatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+	private final String SRC_SYS_TYPE = "GCP";
 
 	public ResourcesWorker(String projectId, String authenticationFileName, String RABBIT_QUEUE_NAME,
 			Channel rabbitChannel) {
@@ -103,6 +106,7 @@ public class ResourcesWorker implements Runnable {
 			}
 
 			writeToDb(dbConn, "Region", allRegions);
+			publishBasicDataToRabbitMQ("Region", allRegions);
 //			publishToRabbitMQ("Region", allRegions);
 
 			/* Instances */
@@ -152,6 +156,7 @@ public class ResourcesWorker implements Runnable {
 				}
 
 				writeToDb(dbConn, "Subnet", allSubnets);
+				publishBasicDataToRabbitMQ("Subnet", allSubnets);
 //				publishToRabbitMQ("Subnet", allSubnets);
 			}
 
@@ -279,14 +284,53 @@ public class ResourcesWorker implements Runnable {
 					// Extra Data field
 					String machineType = vm.getMachineType().substring(vm.getMachineType().indexOf("/machineTypes/") + "/machineTypes/".length());
 					String zone = vm.getZone().substring(vm.getZone().indexOf("/zones/") + "/zones/".length());
-					String extraData = "Type: " + machineType + ", Status: " + vm.getStatus() + ", Zone: " + zone;
+//					String extraData = "Type: " + machineType + ", Status: " + vm.getStatus() + ", Zone: " + zone;
 							
 					jsonGen.writeStringField("name", vm.getName());
-					jsonGen.writeStringField("srcSysType", "GCP");
+					jsonGen.writeStringField("srcSysType", SRC_SYS_TYPE);
 					jsonGen.writeStringField("resourceType", resourceType);
-					jsonGen.writeStringField("extraData", extraData);
+//					jsonGen.writeStringField("extraData", extraData);
 					jsonGen.writeStringField("id", vm.getId().toString());
 					jsonGen.writeStringField("lastUpdate", lastUpdate);
+					
+					jsonGen.writeArrayFieldStart("details");
+					jsonGen.writeString("Machine Type: " + machineType);
+					jsonGen.writeString("Zone: " + zone);
+					jsonGen.writeString("Status: " + vm.getStatus());
+
+					// Network Interfaces
+					if (vm.getNetworkInterfaces() != null && !vm.getNetworkInterfaces().isEmpty()) {
+					
+						String nwInterfaces = "NW Interfaces: ";
+						boolean isFirst = true;
+						
+						for (NetworkInterface nic: vm.getNetworkInterfaces()) {
+							if (isFirst) {
+								nwInterfaces += "Name: " + nic.getName() + ", int IP: " + nic.getNetworkIP();
+								isFirst = false;
+							} else {
+								nwInterfaces += "; Name: " + nic.getName() + ", int IP: " + nic.getNetworkIP();
+							}
+							
+							if (nic.getAccessConfigs() != null && !nic.getAccessConfigs().isEmpty()) {
+								nwInterfaces += ", ext IP: " + nic.getAccessConfigs().get(0).getNatIP();
+							}
+						}
+						jsonGen.writeString(nwInterfaces);
+					}
+					
+					// Tags
+					if (vm.getTags() != null && vm.getTags().getItems() != null && !vm.getTags().getItems().isEmpty()) {
+						String tags = "";
+						for (String tag: vm.getTags().getItems()) {
+							tags += tag + ",";
+						}
+						
+						tags = tags.substring(0, tags.length() - 1);
+						jsonGen.writeString("Tags: " + tags);
+					}
+					
+					jsonGen.writeEndArray();
 					
 					jsonGen.writeEndObject();
 				};
@@ -302,13 +346,115 @@ public class ResourcesWorker implements Runnable {
 					
 					// Extra Data field
 					String network = fw.getNetwork().substring(fw.getNetwork().indexOf("/networks/") + "/networks/".length());
-					String extraData = "Description: " + fw.getDescription() + ", Network: " + network + ", Direction: " + fw.getDirection();
+//					String extraData = "Description: " + fw.getDescription() + ", Network: " + network + ", Direction: " + fw.getDirection();
 					
 					jsonGen.writeStringField("name", fw.getName());
-					jsonGen.writeStringField("srcSysType", "GCP");
+					jsonGen.writeStringField("srcSysType", SRC_SYS_TYPE);
+					jsonGen.writeStringField("resourceType", resourceType);
+//					jsonGen.writeStringField("extraData", extraData);
+					jsonGen.writeStringField("id", fw.getId().toString());
+					jsonGen.writeStringField("lastUpdate", lastUpdate);
+
+					jsonGen.writeArrayFieldStart("details");
+					jsonGen.writeString("Direction: " + fw.getDirection());
+					
+					// Allowed or denied protocols and ports
+					if (fw.getAllowed() != null && !fw.getAllowed().isEmpty()) {
+						
+						String allowed;
+						
+						if (fw.getAllowed().get(0).getIPProtocol() != null) {
+							allowed = "Proto: " + fw.getAllowed().get(0).getIPProtocol();
+						} else {
+							allowed = "Proto: any";
+						}
+						 
+						if (fw.getAllowed().get(0).getPorts() != null && !fw.getAllowed().get(0).getPorts().isEmpty()) {
+							allowed +=  ", Ports: ";
+							for (String port: fw.getAllowed().get(0).getPorts()) {
+								allowed += port + ",";
+							}
+						} else {
+							allowed += ", Ports: any ";
+						}
+						
+						allowed = allowed.substring(0, allowed.length() - 1);
+						
+						jsonGen.writeString("Allowed: " + allowed);
+						
+					} else {
+
+						String denied;
+						
+						if (fw.getDenied().get(0).getIPProtocol() != null) {
+							denied = "Proto: " + fw.getDenied().get(0).getIPProtocol();
+						} else {
+							denied = "Proto: any";
+						}
+						 
+						if (fw.getDenied().get(0).getPorts() != null && !fw.getDenied().get(0).getPorts().isEmpty()) {
+							denied +=  ", Ports: ";
+							for (String port: fw.getDenied().get(0).getPorts()) {
+								denied += port + ",";
+							}
+						} else {
+							denied += ", Ports: any ";
+						}
+						
+						denied = denied.substring(0, denied.length() - 1);
+						
+						jsonGen.writeString("Denied: " + denied);
+					}
+					
+					// Source Filters: IP Ranges
+					if (fw.getSourceRanges() != null && !fw.getSourceRanges().isEmpty()) {
+						String srcFilters = "";
+						for (String srcRange: fw.getSourceRanges()) {
+							srcFilters += srcRange + ",";
+						}
+						
+						srcFilters = srcFilters.substring(0, srcFilters.length() - 1);
+						jsonGen.writeString("Source Filters: IP Ranges: " + srcFilters);
+					}
+					
+					// Target Tag
+					if (fw.getTargetTags() != null && !fw.getTargetTags().isEmpty()) {
+						String targetTags = "";
+						for (String targetTag: fw.getTargetTags()) {
+							targetTags += targetTag + ",";
+						}
+						
+						targetTags = targetTags.substring(0, targetTags.length() - 1);
+						jsonGen.writeString("Target Tags: " + targetTags);
+					}
+					
+					jsonGen.writeString("Description: " + fw.getDescription());
+					jsonGen.writeString("Network: " + network);
+					
+					jsonGen.writeEndArray();
+					
+					jsonGen.writeEndObject();
+				};
+			}			
+
+			else if (resourceType.equals("Subnet")) {
+				
+				List<Subnetwork> subnets = (List<Subnetwork>)(List<?>) data;
+				
+				for (Subnetwork subnet: subnets) {
+					
+					jsonGen.writeStartObject();
+
+					// Extra Data field
+					String region = subnet.getRegion().substring(subnet.getRegion().indexOf("/regions/") + "/regions/".length());
+					String network = subnet.getNetwork().substring(subnet.getNetwork().indexOf("/networks/") + "/networks/".length());
+					String extraData = "Gateway: " + subnet.getGatewayAddress() + ", CIDR: " + subnet.getIpCidrRange() + ", Network: " + network + ", Region: " + region;
+					
+					jsonGen.writeStringField("name", subnet.getName());
+					jsonGen.writeStringField("srcSysType", SRC_SYS_TYPE);
 					jsonGen.writeStringField("resourceType", resourceType);
 					jsonGen.writeStringField("extraData", extraData);
-					jsonGen.writeStringField("id", fw.getId().toString());
+					jsonGen.writeStringField("id", subnet.getId().toString());
 					jsonGen.writeStringField("lastUpdate", lastUpdate);
 					
 					jsonGen.writeEndObject();
@@ -325,13 +471,32 @@ public class ResourcesWorker implements Runnable {
 
 					// Extra Data field
 					String region = zone.getRegion().substring(zone.getRegion().indexOf("/regions/") + "/regions/".length());
-					String extraData = "Description: " + zone.getDescription() + ", Status: " + zone.getStatus() + ", Region: " + region;
+					String extraData = "Status: " + zone.getStatus() + ", Region: " + region;
 					
 					jsonGen.writeStringField("name", zone.getName());
-					jsonGen.writeStringField("srcSysType", "GCP");
+					jsonGen.writeStringField("srcSysType", SRC_SYS_TYPE);
 					jsonGen.writeStringField("resourceType", resourceType);
 					jsonGen.writeStringField("extraData", extraData);
 					jsonGen.writeStringField("id", zone.getId().toString());
+					jsonGen.writeStringField("lastUpdate", lastUpdate);
+					
+					jsonGen.writeEndObject();
+				};
+			}			
+
+			else if (resourceType.equals("Region")) {
+				
+				List<Region> regions = (List<Region>)(List<?>) data;
+				
+				for (Region region: regions) {
+					
+					jsonGen.writeStartObject();
+
+					jsonGen.writeStringField("name", region.getName());
+					jsonGen.writeStringField("srcSysType", SRC_SYS_TYPE);
+					jsonGen.writeStringField("resourceType", resourceType);
+					jsonGen.writeStringField("extraData", "");
+					jsonGen.writeStringField("id", region.getId().toString());
 					jsonGen.writeStringField("lastUpdate", lastUpdate);
 					
 					jsonGen.writeEndObject();
