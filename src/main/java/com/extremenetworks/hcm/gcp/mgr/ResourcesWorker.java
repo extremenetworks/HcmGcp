@@ -18,6 +18,7 @@ import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.api.services.compute.model.Firewall;
 import com.google.api.services.compute.model.Instance;
+import com.google.api.services.compute.model.Network;
 import com.google.api.services.compute.model.NetworkInterface;
 import com.google.api.services.compute.model.Region;
 import com.google.api.services.compute.model.Subnetwork;
@@ -47,8 +48,7 @@ public class ResourcesWorker implements Runnable {
 	private static final JsonFactory jsonFactory = new JsonFactory();
 	private final SimpleDateFormat dateFormatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 	private final String SRC_SYS_TYPE = "GCP";
-	private final String RESOURCE_TYPE_VM = "VM";
-	private enum RESOURCE_TYPES { VM, Firewall, Subnet, Region, Zone }
+	private enum RESOURCE_TYPES { VM, Firewall, Network, Subnet, Region, Zone }
 
 	public ResourcesWorker(String projectId, String authenticationFileName, String RABBIT_QUEUE_NAME,
 			Channel rabbitChannel) {
@@ -94,7 +94,7 @@ public class ResourcesWorker implements Runnable {
 				return;
 			}
 
-			writeToDb(dbConn, "Zone", allZones);
+			writeToDb(dbConn, RESOURCE_TYPES.Zone, allZones);
 			publishBasicDataToRabbitMQ(RESOURCE_TYPES.Zone, allZones);
 //			publishToRabbitMQ("Zone", allZones);
 
@@ -107,7 +107,7 @@ public class ResourcesWorker implements Runnable {
 				return;
 			}
 
-			writeToDb(dbConn, "Region", allRegions);
+			writeToDb(dbConn, RESOURCE_TYPES.Region, allRegions);
 			publishBasicDataToRabbitMQ(RESOURCE_TYPES.Region, allRegions);
 //			publishToRabbitMQ("Region", allRegions);
 
@@ -132,7 +132,7 @@ public class ResourcesWorker implements Runnable {
 					allInstances.addAll(instancesFromZone);
 				}
 
-				writeToDb(dbConn, RESOURCE_TYPE_VM, allInstances);
+				writeToDb(dbConn, RESOURCE_TYPES.VM, allInstances);
 				publishBasicDataToRabbitMQ(RESOURCE_TYPES.VM, allInstances);
 			}
 
@@ -157,7 +157,7 @@ public class ResourcesWorker implements Runnable {
 					allSubnets.addAll(subnetsFromRegion);
 				}
 
-				writeToDb(dbConn, "Subnet", allSubnets);
+				writeToDb(dbConn, RESOURCE_TYPES.Subnet, allSubnets);
 				publishBasicDataToRabbitMQ(RESOURCE_TYPES.Subnet, allSubnets);
 //				publishToRabbitMQ("Subnet", allSubnets);
 			}
@@ -171,9 +171,22 @@ public class ResourcesWorker implements Runnable {
 				return;
 			}
 
-			writeToDb(dbConn, "Firewall", allFirewalls);
+			writeToDb(dbConn, RESOURCE_TYPES.Firewall, allFirewalls);
 			publishBasicDataToRabbitMQ(RESOURCE_TYPES.Firewall, allFirewalls);
-//			publishToRabbitMQ("Firewall", allFirewalls);
+			
+			
+			/* Networks */
+			List<Object> allNetworks = computeManager.retrieveAllNetworks(projectId);
+			if (allNetworks == null || allNetworks.isEmpty()) {
+				String msg = "Error retrieving networks from GCP - stopping any further processing";
+				logger.warn(msg);
+				rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null, msg.getBytes("UTF-8"));
+				return;
+			}
+
+			writeToDb(dbConn, RESOURCE_TYPES.Network, allNetworks);
+			publishBasicDataToRabbitMQ(RESOURCE_TYPES.Network, allNetworks);
+			
 
 			logger.debug("Finished retrieving all resources from GCP project " + projectId);
 
@@ -193,7 +206,7 @@ public class ResourcesWorker implements Runnable {
 	 *                     data and then stored in the DB
 	 * @return
 	 */
-	private boolean writeToDb(java.sql.Connection dbConn, String resourceType, List<Object> data) {
+	private boolean writeToDb(java.sql.Connection dbConn, RESOURCE_TYPES resourceType, List<Object> data) {
 
 		try {
 			String sqlInsertStmtSubnets = "INSERT INTO gcp (lastUpdated, projectId, resourceType, resourceData) "
@@ -202,7 +215,7 @@ public class ResourcesWorker implements Runnable {
 			PreparedStatement prepInsertStmtSubnets = dbConn.prepareStatement(sqlInsertStmtSubnets);
 
 			prepInsertStmtSubnets.setString(1, projectId);
-			prepInsertStmtSubnets.setString(2, resourceType);
+			prepInsertStmtSubnets.setString(2, resourceType.name());
 			prepInsertStmtSubnets.setString(3, jsonMapper.writeValueAsString(data));
 			prepInsertStmtSubnets.setString(4, jsonMapper.writeValueAsString(data));
 
@@ -215,51 +228,52 @@ public class ResourcesWorker implements Runnable {
 		}
 	}
 
-	private boolean publishToRabbitMQ(String resourceType, List<Object> data) {
-
-		try {
-			ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-			JsonGenerator jsonGen = jsonFactory.createGenerator(outputStream, JsonEncoding.UTF8);
-
-			jsonGen.writeStartObject();
-
-			jsonGen.writeStringField("dataType", "resources");
-			jsonGen.writeStringField("sourceSystemType", "gcp");
-			jsonGen.writeStringField("sourceSystemProjectId", projectId);
-
-			jsonGen.writeArrayFieldStart("data");
-
-			Date now = new Date();
-
-			jsonGen.writeStartObject();
-
-			jsonGen.writeStringField("lastUpdated", dateFormatter.format(now));
-			jsonGen.writeStringField("resourceType", resourceType);
-			jsonGen.writeFieldName("resourceData");
-
-			jsonGen.writeStartArray();
-			jsonGen.writeRawValue(jsonMapper.writeValueAsString(data));
-			jsonGen.writeEndArray();
-
-			jsonGen.writeEndObject();
-
-			jsonGen.writeEndArray();
-			jsonGen.writeEndObject();
-
-			jsonGen.close();
-			outputStream.close();
-
-			logger.debug("Forwarding updated list of " + resourceType + "s to the message queue " + RABBIT_QUEUE_NAME); 
-			rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null, outputStream.toString().getBytes("UTF-8"));
-
-			return true;
-
-		} catch (Exception ex) {
-			logger.error("Error trying to publish resource data to RabbitMQ", ex);
-			return false;
-		}
-
-	}
+	
+//	private boolean publishToRabbitMQ(String resourceType, List<Object> data) {
+//
+//		try {
+//			ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+//			JsonGenerator jsonGen = jsonFactory.createGenerator(outputStream, JsonEncoding.UTF8);
+//
+//			jsonGen.writeStartObject();
+//
+//			jsonGen.writeStringField("dataType", "resources");
+//			jsonGen.writeStringField("sourceSystemType", "gcp");
+//			jsonGen.writeStringField("sourceSystemProjectId", projectId);
+//
+//			jsonGen.writeArrayFieldStart("data");
+//
+//			Date now = new Date();
+//
+//			jsonGen.writeStartObject();
+//
+//			jsonGen.writeStringField("lastUpdated", dateFormatter.format(now));
+//			jsonGen.writeStringField("resourceType", resourceType);
+//			jsonGen.writeFieldName("resourceData");
+//
+//			jsonGen.writeStartArray();
+//			jsonGen.writeRawValue(jsonMapper.writeValueAsString(data));
+//			jsonGen.writeEndArray();
+//
+//			jsonGen.writeEndObject();
+//
+//			jsonGen.writeEndArray();
+//			jsonGen.writeEndObject();
+//
+//			jsonGen.close();
+//			outputStream.close();
+//
+//			logger.debug("Forwarding updated list of " + resourceType + "s to the message queue " + RABBIT_QUEUE_NAME); 
+//			rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null, outputStream.toString().getBytes("UTF-8"));
+//
+//			return true;
+//
+//		} catch (Exception ex) {
+//			logger.error("Error trying to publish resource data to RabbitMQ", ex);
+//			return false;
+//		}
+//
+//	}
 	
 
 	private boolean publishBasicDataToRabbitMQ(RESOURCE_TYPES resourceType, List<Object> data) {
@@ -285,6 +299,12 @@ public class ResourcesWorker implements Runnable {
 				
 				List<Firewall> firewalls = (List<Firewall>)(List<?>) data;
 				generateJsonForFirewalls(jsonGen, firewalls, lastUpdate);
+			}			
+
+			else if (resourceType == RESOURCE_TYPES.Network) {
+				
+				List<Network> networks = (List<Network>)(List<?>) data;
+				generateJsonForNetworks(jsonGen, networks, lastUpdate);
 			}			
 
 			else if (resourceType == RESOURCE_TYPES.Subnet) {
@@ -411,6 +431,56 @@ public class ResourcesWorker implements Runnable {
 		}	
 	}
 
+
+	private void generateJsonForNetworks(JsonGenerator jsonGen, List<Network> networks, String lastUpdate) {
+		
+		try {
+			for (Network network: networks) {
+				
+				jsonGen.writeStartObject();
+
+				jsonGen.writeStringField("name", network.getName());
+				jsonGen.writeStringField("srcSysType", SRC_SYS_TYPE);
+				jsonGen.writeStringField("resourceType", RESOURCE_TYPES.Network.name());
+				jsonGen.writeStringField("id", network.getId().toString());
+				jsonGen.writeStringField("lastUpdate", lastUpdate);
+
+				/* 
+				 * Details
+				 */
+				jsonGen.writeArrayFieldStart("details");
+				jsonGen.writeString("Description: " + network.getDescription());
+				
+				if (network.getRoutingConfig() != null) {
+					jsonGen.writeString("Routing Mode: " + network.getRoutingConfig().getRoutingMode());
+				}
+				
+				// Create list of subnetworks within this network
+				if (network.getSubnetworks() != null && !network.getSubnetworks().isEmpty()) {
+					
+					String listOfSubnets = "Subnets: ";
+					
+					for(String subnetLongName: network.getSubnetworks()) {
+						String subnet = subnetLongName.substring(subnetLongName.indexOf("/subnetworks/") + "/subnetworks/".length());
+						listOfSubnets += subnet + ",";
+					}
+					
+					listOfSubnets = listOfSubnets.substring(0, listOfSubnets.length() - 1);
+					jsonGen.writeString(listOfSubnets);
+				}
+				
+				// End the "details" array
+				jsonGen.writeEndArray();
+				
+				// End the current network node
+				jsonGen.writeEndObject();
+			}
+			
+		} catch (Exception ex) {
+			logger.error("Error generating JSON content for list of networks",  ex);
+		}	
+	}
+	
 		
 	private void generateJsonForSubnets(JsonGenerator jsonGen, List<Subnetwork> subnets, String lastUpdate) {
 		
