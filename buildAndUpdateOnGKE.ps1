@@ -1,3 +1,7 @@
+param (
+    [switch]$dockerlogin = $false
+ )
+ 
 # Memorize script start time
 $ScriptStartTime = (Get-Date)
 
@@ -28,7 +32,9 @@ Write-Host "$(Get-Date -Format HH:mm:ss.fff) Building new container image with v
 
 # Build and push the Docker container
 docker.exe build -q -t kurts/ng_hcm_gcp_mgr:$version .
-docker.exe login -ukurts -pXS7Z8pEy
+if ($dockerlogin) {
+	docker.exe login -ukurts -pXS7Z8pEy
+	}
 docker.exe push kurts/ng_hcm_gcp_mgr:$version
 
 # Store the new build version in the file
