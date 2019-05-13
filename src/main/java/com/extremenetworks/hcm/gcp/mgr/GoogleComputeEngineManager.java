@@ -14,6 +14,7 @@ import com.google.api.services.compute.model.NetworkList;
 import com.google.api.services.compute.model.RegionList;
 import com.google.api.services.compute.model.SubnetworkList;
 import com.google.api.services.compute.model.ZoneList;
+import com.google.cloud.monitoring.v3.MetricServiceClient.ListTimeSeriesPagedResponse;
 import com.google.api.services.cloudbilling.model.ProjectBillingInfo;
 
 public class GoogleComputeEngineManager {
@@ -62,6 +63,10 @@ public class GoogleComputeEngineManager {
 		return computeApi.retrieveBillingInfo(projectId);
 	}
 
+	public ListTimeSeriesPagedResponse retrieveMetrics(String projectId) {
+		return computeApi.retrieveMetrics(projectId);
+	}
+	
 	/**
 	 * Retrieves a list of firewalls from GCE.
 	 * 
