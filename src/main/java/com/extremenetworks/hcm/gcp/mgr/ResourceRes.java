@@ -29,7 +29,7 @@ public class ResourceRes {
 	private static ObjectMapper jsonMapper = new ObjectMapper();
 	private static final JsonFactory jsonFactory = new JsonFactory();
 
-	private final String rabbitServer = "hcm-rabbit-mq";
+	private final String rabbitServer = "rabbit-mq";
 	private final static String RABBIT_QUEUE_NAME = "gcp.resources";
 	private static Channel rabbitChannel;
 
@@ -114,7 +114,7 @@ public class ResourceRes {
 			logger.debug("Creating background worker to import compute data from GPC project " + projectId);
 
 			executor.execute(new ResourcesWorker(projectId, authFileContent, RABBIT_QUEUE_NAME, rabbitChannel));
-
+			
 			return jsonMapper.writeValueAsString(
 					new ResourcesWebResponse(0, "Successfully triggered an update of all resource data"));
 

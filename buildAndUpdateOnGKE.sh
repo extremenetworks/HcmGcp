@@ -31,7 +31,6 @@ echo -e "${GREEN}$(date +%T.%3N) Building new container image with version $vers
 
 # Build and push the Docker container
 docker build -q -t kurts/ng_hcm_gcp_mgr:$version .
-docker login -ukurts -pXS7Z8pEy
 docker push kurts/ng_hcm_gcp_mgr:$version
 
 # Store the new build version in the file
