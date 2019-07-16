@@ -1,26 +1,33 @@
 package com.extremenetworks.hcm.gcp.mgr;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.sql.DriverManager;
-import java.sql.ResultSet;
-import java.sql.Statement;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import javax.ws.rs.*;
+import javax.ws.rs.Consumes;
+import javax.ws.rs.POST;
+import javax.ws.rs.Path;
+import javax.ws.rs.Produces;
+import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.MediaType;
-
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
 import com.fasterxml.jackson.core.JsonEncoding;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.rabbitmq.client.ConnectionFactory;
-import com.rabbitmq.client.Connection;
+import com.google.auth.oauth2.GoogleCredentials;
+import com.google.cloud.datastore.Datastore;
+import com.google.cloud.datastore.DatastoreOptions;
 import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.rabbitmq.client.ConnectionFactory;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 @Path("resources")
 public class ResourceRes {
@@ -33,9 +40,10 @@ public class ResourceRes {
 	private final static String RABBIT_QUEUE_NAME = "gcp.resources";
 	private static Channel rabbitChannel;
 
-	private final String dbConnString = "jdbc:mysql://hcm-mysql:3306/Resources?useSSL=false";
-	private final String dbUser = "root";
-	private final String dbPassword = "password";
+	// private final String dbConnString =
+	// "jdbc:mysql://hcm-mysql:3306/Resources?useSSL=false";
+	// private final String dbUser = "root";
+	// private final String dbPassword = "password";
 
 	private ExecutorService executor;
 
@@ -49,7 +57,7 @@ public class ResourceRes {
 
 			Connection connection = factory.newConnection();
 			rabbitChannel = connection.createChannel();
-			rabbitChannel.queueDeclare(RABBIT_QUEUE_NAME, true, false, false, null);
+			rabbitChannel.queueDeclare(RABBIT_QUEUE_NAME, false, false, false, null);
 
 			executor = Executors.newCachedThreadPool();
 
@@ -62,11 +70,13 @@ public class ResourceRes {
 	 * Retrieves all resources (VMs, subnets, networks, etc.) for the given project
 	 * ID from the DB
 	 */
-	@GET
+	@POST
 	@Path("all")
-	public String retrieveAllResources(@QueryParam("projectId") String projectId) {
+	@Consumes(MediaType.APPLICATION_JSON)
+	@Produces(MediaType.APPLICATION_JSON)
+	public String retrieveAllResources(String authFileContent, @QueryParam("projectId") String projectId) {
 
-		String dbResourceData = retrieveDataFromDb(projectId);
+		String dbResourceData = retrieveDataFromDb(projectId, authFileContent);
 
 		return dbResourceData;
 	}
@@ -89,11 +99,12 @@ public class ResourceRes {
 	 * Starts a background worker that pulls all resources from the given account.
 	 * This is a non-blocking REST call that just starts that worker in a separate
 	 * thread and immediately responds to the caller. Once the background worker is
-	 * done retrieving all data from GCP it will a) update the DB and b) publish the data
-	 * to RabbitMQ
+	 * done retrieving all data from GCP it will a) update the DB and b) publish the
+	 * data to RabbitMQ
 	 * 
-	 * @param projectId		Google cloud project ID
-	 * @serialData authFileContent	Content of the JSON auth file for the service account to use
+	 * @param projectId Google cloud project ID
+	 * @serialData authFileContent Content of the JSON auth file for the service
+	 *             account to use
 	 * @return
 	 */
 	@POST
@@ -114,7 +125,7 @@ public class ResourceRes {
 			logger.debug("Creating background worker to import compute data from GPC project " + projectId);
 
 			executor.execute(new ResourcesWorker(projectId, authFileContent, RABBIT_QUEUE_NAME, rabbitChannel));
-			
+
 			return jsonMapper.writeValueAsString(
 					new ResourcesWebResponse(0, "Successfully triggered an update of all resource data"));
 
@@ -136,19 +147,50 @@ public class ResourceRes {
 	 * @param projectId
 	 * @return
 	 */
-	private String retrieveDataFromDb(String projectId) {
+	private String retrieveDataFromDb(String projectId, String authFileContent) {
 
 		logger.debug("Retrieving all resource data for GCP project " + projectId + " from the DB");
 
 		try {
-			java.sql.Connection con = DriverManager.getConnection(dbConnString, dbUser, dbPassword);
+			/* Load the JSON credentials file content */
+			GoogleCredentials gcpCredentials = null;
 
-			// Query the DB for all resource data for the given account ID
-			String query = "SELECT lastUpdated, resourceType, resourceData FROM gcp WHERE projectId = '" + projectId
-					+ "'";
+			try {
+				InputStream credFileInputStream = new ByteArrayInputStream(
+						authFileContent.getBytes(StandardCharsets.UTF_8));
+				gcpCredentials = GoogleCredentials.fromStream(credFileInputStream);
 
-			Statement st = con.createStatement();
-			ResultSet rs = st.executeQuery(query);
+			} catch (Exception ex) {
+				logger.error("Error loading the credentials JSON file content for authorizing against the GCP project "
+						+ projectId, ex);
+				return "";
+			}
+
+			Datastore datastore;
+
+			try {
+				datastore = DatastoreOptions.newBuilder().setCredentials(gcpCredentials).setProjectId(projectId).build()
+						.getService();
+
+			} catch (Exception e) {
+				logger.error("Error while trying to setup the 'compute engine' connection for project " + projectId, e);
+				return "";
+			}
+
+			// Retrieve entity
+			Entity retrieved = datastore.get(taskKey);
+
+			InputStream resourceDataIs = retrieved.getBlob("resourceData").asInputStream();
+
+			ByteArrayOutputStream result = new ByteArrayOutputStream();
+			byte[] buffer = new byte[1024];
+			int length;
+			while ((length = resourceDataIs.read(buffer)) != -1) {
+				result.write(buffer, 0, length);
+			}
+
+			System.out.printf("Retrieved " + taskKey.getName() + ": " + retrieved.getString("resourceType")
+					+ " - data: " + result.toString(StandardCharsets.UTF_8.name()));
 
 			/*
 			 * Start building the JSON string which contains some meta data. Example:
@@ -214,5 +256,101 @@ public class ResourceRes {
 
 		return "";
 	}
+
+	/**
+	 * Retrieves all resource data for the given account from the DB. Generate a
+	 * JSON-formated string. Example: { "dataType": "resources", "sourceSystemType":
+	 * "gcp", "sourceSystemProjectId": "418454969983", "data": [ { "lastUpdated":
+	 * "2019-04-05 15:22:38", "resourceType": "Subnet", "resourceData": [ { "tags":
+	 * [], "state": "available", "vpcId": "vpc-d3358ab6", ... }, ...
+	 * 
+	 * @param projectId
+	 * @return
+	 */
+	// private String retrieveDataFromDb(String projectId) {
+
+	// logger.debug("Retrieving all resource data for GCP project " + projectId + "
+	// from the DB");
+
+	// try {
+	// java.sql.Connection con = DriverManager.getConnection(dbConnString, dbUser,
+	// dbPassword);
+
+	// // Query the DB for all resource data for the given account ID
+	// String query = "SELECT lastUpdated, resourceType, resourceData FROM gcp WHERE
+	// projectId = '" + projectId
+	// + "'";
+
+	// Statement st = con.createStatement();
+	// ResultSet rs = st.executeQuery(query);
+
+	// /*
+	// * Start building the JSON string which contains some meta data. Example:
+	// *
+	// * "dataType": "resources", "sourceSystemType": "gcp",
+	// "sourceSystemProjectId":
+	// * "418454969983",
+	// */
+	// ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+	// JsonGenerator jsonGen = jsonFactory.createGenerator(outputStream,
+	// JsonEncoding.UTF8);
+
+	// jsonGen.writeStartObject();
+
+	// jsonGen.writeStringField("dataType", "resources");
+	// jsonGen.writeStringField("sourceSystemType", "gcp");
+	// jsonGen.writeStringField("sourceSystemProjectId", projectId);
+
+	// /*
+	// * The "data" field will contain an array of objects. Each object will contain
+	// * all data on a particular resource type
+	// */
+	// jsonGen.writeArrayFieldStart("data");
+
+	// while (rs.next()) {
+
+	// String resourceType = rs.getString("resourceType");
+	// logger.debug("Retrieved next DB row: " + ", lastUpdated: " +
+	// rs.getString("lastUpdated")
+	// + ", resourceType: " + rs.getString("resourceType") + ", resourceData: "
+	// + rs.getString("resourceData").substring(0, 200) + "...");
+
+	// if (resourceType != null && !resourceType.isEmpty()) {
+
+	// jsonGen.writeStartObject();
+
+	// /*
+	// * Per resource type, the following meta data will be written (example):
+	// * "lastUpdated": "2019-04-05 15:22:38", "resourceType": "Subnet",
+	// * "resourceData": [ ... list of subnets ... ]
+	// */
+	// jsonGen.writeStringField("lastUpdated",
+	// dateFormatter.format(rs.getTimestamp("lastUpdated")));
+	// jsonGen.writeStringField("resourceType", rs.getString("resourceType"));
+
+	// // The list of subnets is already stored as a JSON string in the DB
+	// jsonGen.writeFieldName("resourceData");
+	// jsonGen.writeRawValue(rs.getString("resourceData"));
+
+	// jsonGen.writeEndObject();
+	// }
+
+	// }
+
+	// // Finalize the JSON string and output stream
+	// jsonGen.writeEndArray();
+	// jsonGen.writeEndObject();
+
+	// jsonGen.close();
+	// outputStream.close();
+
+	// return outputStream.toString();
+
+	// } catch (Exception ex) {
+	// logger.error(ex);
+	// }
+
+	// return "";
+	// }
 
 }
