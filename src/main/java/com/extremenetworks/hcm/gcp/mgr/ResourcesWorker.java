@@ -1,6 +1,9 @@
 package com.extremenetworks.hcm.gcp.mgr;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.text.SimpleDateFormat;
@@ -16,6 +19,14 @@ import com.fasterxml.jackson.core.JsonEncoding;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.api.client.googleapis.auth.oauth2.GoogleCredential;
+import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
+import com.google.api.client.http.HttpTransport;
+import com.google.api.gax.core.FixedCredentialsProvider;
+import com.google.api.services.cloudbilling.Cloudbilling;
+import com.google.api.services.cloudbilling.CloudbillingScopes;
+import com.google.api.services.compute.Compute;
+import com.google.api.services.compute.ComputeScopes;
 import com.google.api.services.compute.model.Firewall;
 import com.google.api.services.compute.model.Instance;
 import com.google.api.services.compute.model.Network;
@@ -24,6 +35,15 @@ import com.google.api.services.compute.model.Region;
 import com.google.api.services.compute.model.Subnetwork;
 import com.google.api.services.compute.model.Zone;
 import com.google.api.services.compute.model.ZoneList;
+import com.google.api.services.monitoring.v3.MonitoringScopes;
+import com.google.auth.oauth2.GoogleCredentials;
+import com.google.cloud.Timestamp;
+import com.google.cloud.datastore.Datastore;
+import com.google.cloud.datastore.DatastoreOptions;
+import com.google.cloud.datastore.Entity;
+import com.google.cloud.datastore.Key;
+import com.google.cloud.monitoring.v3.MetricServiceClient;
+import com.google.cloud.monitoring.v3.MetricServiceSettings;
 import com.rabbitmq.client.Channel;
 
 public class ResourcesWorker implements Runnable {
@@ -33,7 +53,7 @@ public class ResourcesWorker implements Runnable {
 
 	// GCP config
 	private String projectId;
-	private String authenticationFileName;
+	private String authFileContent;
 
 	// Rabbit MQ config
 	private String RABBIT_QUEUE_NAME;
@@ -50,11 +70,11 @@ public class ResourcesWorker implements Runnable {
 	private final String SRC_SYS_TYPE = "GCP";
 	private enum RESOURCE_TYPES { VM, Firewall, Network, Subnet, Region, Zone }
 
-	public ResourcesWorker(String projectId, String authenticationFileName, String RABBIT_QUEUE_NAME,
+	public ResourcesWorker(String projectId, String authFileContent, String RABBIT_QUEUE_NAME,
 			Channel rabbitChannel) {
 
 		this.projectId = projectId;
-		this.authenticationFileName = authenticationFileName;
+		this.authFileContent = authFileContent;
 
 		this.RABBIT_QUEUE_NAME = RABBIT_QUEUE_NAME;
 		this.rabbitChannel = rabbitChannel;
@@ -74,7 +94,7 @@ public class ResourcesWorker implements Runnable {
 
 		try {
 			GoogleComputeEngineManager computeManager = new GoogleComputeEngineManager();
-			boolean connected = computeManager.createComputeConnection(projectId, authenticationFileName);
+			boolean connected = computeManager.createComputeConnection(projectId, authFileContent);
 
 			if (!connected) {
 				String msg = "Won't be able to retrieve any data from Google Compute Engine since no authentication/authorization/connection could be established";
@@ -83,7 +103,50 @@ public class ResourcesWorker implements Runnable {
 				return;
 			}
 
-			java.sql.Connection dbConn = DriverManager.getConnection(dbConnString, dbUser, dbPassword);
+//			java.sql.Connection dbConn = DriverManager.getConnection(dbConnString, dbUser, dbPassword);
+			
+			/* Load the JSON credentials file content */
+			GoogleCredential credV1 = null;
+			GoogleCredentials credV2 = null;
+			
+			try {
+				InputStream credFileInputStreamV1 = new ByteArrayInputStream(
+						authFileContent.getBytes(StandardCharsets.UTF_8));
+
+				List<String> authScopes = new ArrayList<String>();
+				authScopes.add(ComputeScopes.COMPUTE);
+				authScopes.add(CloudbillingScopes.CLOUD_PLATFORM);
+				authScopes.add(MonitoringScopes.MONITORING_READ);
+//				authScopes.add(DatastoreScopes.)
+				
+//				credV1 = GoogleCredential.fromStream(credFileInputStreamV1).createScoped(authScopes);
+
+				InputStream credFileInputStreamV2 = new ByteArrayInputStream(
+						authFileContent.getBytes(StandardCharsets.UTF_8));
+//				credV2 = GoogleCredentials.fromStream(credFileInputStreamV2).createScoped(authScopes);
+				credV2 = GoogleCredentials.fromStream(credFileInputStreamV2);
+			
+				
+			} catch (Exception ex) {
+				logger.error("Error loading the credentials JSON file content for authorizing against the GCP project "
+						+ projectId, ex);
+				return;
+			}
+
+			
+			Datastore datastore;
+			
+			try {
+				HttpTransport httpTransport = GoogleNetHttpTransport.newTrustedTransport();
+
+				datastore = DatastoreOptions.newBuilder().setCredentials(credV2).setProjectId(projectId).build().getService();
+				
+			} catch (Exception e) {
+				logger.error("Error while trying to setup the 'compute engine' connection for project " + projectId, e);
+				return ;
+			}
+			
+			
 
 			/* Zones */
 			List<Object> allZones = computeManager.retrieveAllZones(projectId);
@@ -94,7 +157,7 @@ public class ResourcesWorker implements Runnable {
 				return;
 			}
 
-			writeToDb(dbConn, RESOURCE_TYPES.Zone, allZones);
+			writeToDb(datastore, RESOURCE_TYPES.Zone, allZones);
 			publishBasicDataToRabbitMQ(RESOURCE_TYPES.Zone, allZones);
 //			publishToRabbitMQ("Zone", allZones);
 
@@ -107,7 +170,7 @@ public class ResourcesWorker implements Runnable {
 				return;
 			}
 
-			writeToDb(dbConn, RESOURCE_TYPES.Region, allRegions);
+			writeToDb(datastore, RESOURCE_TYPES.Region, allRegions);
 			publishBasicDataToRabbitMQ(RESOURCE_TYPES.Region, allRegions);
 //			publishToRabbitMQ("Region", allRegions);
 
@@ -132,7 +195,7 @@ public class ResourcesWorker implements Runnable {
 					allInstances.addAll(instancesFromZone);
 				}
 
-				writeToDb(dbConn, RESOURCE_TYPES.VM, allInstances);
+				writeToDb(datastore, RESOURCE_TYPES.VM, allInstances);
 				publishBasicDataToRabbitMQ(RESOURCE_TYPES.VM, allInstances);
 			}
 
@@ -157,7 +220,7 @@ public class ResourcesWorker implements Runnable {
 					allSubnets.addAll(subnetsFromRegion);
 				}
 
-				writeToDb(dbConn, RESOURCE_TYPES.Subnet, allSubnets);
+				writeToDb(datastore, RESOURCE_TYPES.Subnet, allSubnets);
 				publishBasicDataToRabbitMQ(RESOURCE_TYPES.Subnet, allSubnets);
 //				publishToRabbitMQ("Subnet", allSubnets);
 			}
@@ -171,7 +234,7 @@ public class ResourcesWorker implements Runnable {
 				return;
 			}
 
-			writeToDb(dbConn, RESOURCE_TYPES.Firewall, allFirewalls);
+			writeToDb(datastore, RESOURCE_TYPES.Firewall, allFirewalls);
 			publishBasicDataToRabbitMQ(RESOURCE_TYPES.Firewall, allFirewalls);
 			
 			
@@ -184,7 +247,7 @@ public class ResourcesWorker implements Runnable {
 				return;
 			}
 
-			writeToDb(dbConn, RESOURCE_TYPES.Network, allNetworks);
+			writeToDb(datastore, RESOURCE_TYPES.Network, allNetworks);
 			publishBasicDataToRabbitMQ(RESOURCE_TYPES.Network, allNetworks);
 			
 
@@ -199,27 +262,45 @@ public class ResourcesWorker implements Runnable {
 	/**
 	 * Writes the given data (Subnets, VMs, etc.) to the DB
 	 * 
-	 * @param dbConn       Active DB connection
+	 * @param datastore       Active DB connection
 	 * @param resourceType Valid types: Subnet, VM,
 	 * @param data         Map of resource data. The values can contain any type of
 	 *                     object (subnets, VMs, etc.) and will be written to JSON
 	 *                     data and then stored in the DB
 	 * @return
 	 */
-	private boolean writeToDb(java.sql.Connection dbConn, RESOURCE_TYPES resourceType, List<Object> data) {
+	private boolean writeToDb(Datastore datastore, RESOURCE_TYPES resourceType, List<Object> data) {
 
 		try {
-			String sqlInsertStmtSubnets = "INSERT INTO gcp (lastUpdated, projectId, resourceType, resourceData) "
-					+ "VALUES (NOW(), ?, ?, ?) " + "ON DUPLICATE KEY UPDATE lastUpdated=NOW(), resourceData=?";
+			
+			// The kind for the new entity
+		    String kind = "GCP_Resources";
+		    // The name/ID for the new entity
+		    String name = resourceType.name();
+		    // The Cloud Datastore key for the new entity
+		    Key taskKey = datastore.newKeyFactory().setKind(kind).newKey(name);
 
-			PreparedStatement prepInsertStmtSubnets = dbConn.prepareStatement(sqlInsertStmtSubnets);
+		    // Prepares the new entity
+		    Entity task = Entity.newBuilder(taskKey)
+		        .set("lastUpdated", Timestamp.now())
+		        .set("projectId", projectId)
+		        .set("resourceType", resourceType.name())
+		        .set("resourceData", jsonMapper.writeValueAsString(data))
+		        .build();
 
-			prepInsertStmtSubnets.setString(1, projectId);
-			prepInsertStmtSubnets.setString(2, resourceType.name());
-			prepInsertStmtSubnets.setString(3, jsonMapper.writeValueAsString(data));
-			prepInsertStmtSubnets.setString(4, jsonMapper.writeValueAsString(data));
+		    // Saves the entity
+		    datastore.put(task);
 
-			prepInsertStmtSubnets.executeUpdate();
+		    logger.debug("Saved " +  task.getKey().getName() + ": " + task.getString("description"));
+
+		    //Retrieve entity
+		    Entity retrieved = datastore.get(taskKey);
+
+		    System.out.printf("Retrieved " + taskKey.getName() + ": " + retrieved.getString("description"));
+
+		    
+		    
+
 			return true;
 
 		} catch (Exception ex) {
@@ -227,6 +308,170 @@ public class ResourcesWorker implements Runnable {
 			return false;
 		}
 	}
+
+//	@Override
+//	public void run() {
+//
+//		logger.debug("Starting Background worker to import compute data from GCP for project with ID " + projectId);
+//
+//		try {
+//			GoogleComputeEngineManager computeManager = new GoogleComputeEngineManager();
+//			boolean connected = computeManager.createComputeConnection(projectId, authenticationFileName);
+//
+//			if (!connected) {
+//				String msg = "Won't be able to retrieve any data from Google Compute Engine since no authentication/authorization/connection could be established";
+//				logger.error(msg);
+//				rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null, msg.getBytes("UTF-8"));
+//				return;
+//			}
+//
+//			java.sql.Connection dbConn = DriverManager.getConnection(dbConnString, dbUser, dbPassword);
+//
+//			/* Zones */
+//			List<Object> allZones = computeManager.retrieveAllZones(projectId);
+//			if (allZones == null || allZones.isEmpty()) {
+//				String msg = "Error retrieving zones from GCP - stopping any further processing";
+//				logger.warn(msg);
+//				rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null, msg.getBytes("UTF-8"));
+//				return;
+//			}
+//
+//			writeToDb(dbConn, RESOURCE_TYPES.Zone, allZones);
+//			publishBasicDataToRabbitMQ(RESOURCE_TYPES.Zone, allZones);
+////			publishToRabbitMQ("Zone", allZones);
+//
+//			/* Regions */
+//			List<Object> allRegions = computeManager.retrieveAllRegions(projectId);
+//			if (allZones == null || allZones.isEmpty()) {
+//				String msg = "Error retrieving zones from GCP - stopping any further processing";
+//				logger.warn(msg);
+//				rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null, msg.getBytes("UTF-8"));
+//				return;
+//			}
+//
+//			writeToDb(dbConn, RESOURCE_TYPES.Region, allRegions);
+//			publishBasicDataToRabbitMQ(RESOURCE_TYPES.Region, allRegions);
+////			publishToRabbitMQ("Region", allRegions);
+//
+//			/* Instances */
+//			if (allZones != null && !allZones.isEmpty()) {
+//
+//				List<Object> allInstances = new ArrayList<Object>();
+//
+//				for (Object zoneGeneric : allZones) {
+//
+//					Zone zone = (Zone) zoneGeneric;
+//					List<Object> instancesFromZone = computeManager.retrieveInstancesForZone(projectId, zone.getName());
+//					if (instancesFromZone == null) {
+//						String msg = "Error retrieving instances from GCP zone " + zone.getName()
+//								+ " - stopping any further processing";
+//						logger.warn(msg);
+//						rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null, msg.getBytes("UTF-8"));
+//						return;
+//					}
+//
+////					logger.debug("Found " + instancesFromZone.size() + " instances from zone " + zone);
+//					allInstances.addAll(instancesFromZone);
+//				}
+//
+//				writeToDb(dbConn, RESOURCE_TYPES.VM, allInstances);
+//				publishBasicDataToRabbitMQ(RESOURCE_TYPES.VM, allInstances);
+//			}
+//
+//			/* Subnets */
+//			if (allRegions != null && !allRegions.isEmpty()) {
+//
+//				List<Object> allSubnets = new ArrayList<Object>();
+//
+//				for (Object regionGeneric : allRegions) {
+//
+//					Region region = (Region) regionGeneric;
+//					List<Object> subnetsFromRegion = computeManager.retrieveSubnetworksForRegion(projectId,
+//							region.getName());
+//					if (subnetsFromRegion == null) {
+//						String msg = "Error retrieving subnets from GCP region " + region.getName()
+//								+ " - stopping any further processing";
+//						logger.warn(msg);
+//						rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null, msg.getBytes("UTF-8"));
+//						return;
+//					}
+//
+//					allSubnets.addAll(subnetsFromRegion);
+//				}
+//
+//				writeToDb(dbConn, RESOURCE_TYPES.Subnet, allSubnets);
+//				publishBasicDataToRabbitMQ(RESOURCE_TYPES.Subnet, allSubnets);
+////				publishToRabbitMQ("Subnet", allSubnets);
+//			}
+//
+//			/* Firewalls */
+//			List<Object> allFirewalls = computeManager.retrieveFirewalls(projectId, "", false);
+//			if (allFirewalls == null || allFirewalls.isEmpty()) {
+//				String msg = "Error retrieving firewalls from GCP - stopping any further processing";
+//				logger.warn(msg);
+//				rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null, msg.getBytes("UTF-8"));
+//				return;
+//			}
+//
+//			writeToDb(dbConn, RESOURCE_TYPES.Firewall, allFirewalls);
+//			publishBasicDataToRabbitMQ(RESOURCE_TYPES.Firewall, allFirewalls);
+//			
+//			
+//			/* Networks */
+//			List<Object> allNetworks = computeManager.retrieveAllNetworks(projectId);
+//			if (allNetworks == null || allNetworks.isEmpty()) {
+//				String msg = "Error retrieving networks from GCP - stopping any further processing";
+//				logger.warn(msg);
+//				rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null, msg.getBytes("UTF-8"));
+//				return;
+//			}
+//
+//			writeToDb(dbConn, RESOURCE_TYPES.Network, allNetworks);
+//			publishBasicDataToRabbitMQ(RESOURCE_TYPES.Network, allNetworks);
+//			
+//
+//			logger.debug("Finished retrieving all resources from GCP project " + projectId);
+//
+//		} catch (Exception ex) {
+//			logger.error(ex);
+//			return;
+//		}
+//	}
+//
+//	
+	
+	
+//	/**
+//	 * Writes the given data (Subnets, VMs, etc.) to the DB
+//	 * 
+//	 * @param dbConn       Active DB connection
+//	 * @param resourceType Valid types: Subnet, VM,
+//	 * @param data         Map of resource data. The values can contain any type of
+//	 *                     object (subnets, VMs, etc.) and will be written to JSON
+//	 *                     data and then stored in the DB
+//	 * @return
+//	 */
+//	private boolean writeToDb(java.sql.Connection dbConn, RESOURCE_TYPES resourceType, List<Object> data) {
+//
+//		try {
+//			String sqlInsertStmtSubnets = "INSERT INTO gcp (lastUpdated, projectId, resourceType, resourceData) "
+//					+ "VALUES (NOW(), ?, ?, ?) " + "ON DUPLICATE KEY UPDATE lastUpdated=NOW(), resourceData=?";
+//
+//			PreparedStatement prepInsertStmtSubnets = dbConn.prepareStatement(sqlInsertStmtSubnets);
+//
+//			prepInsertStmtSubnets.setString(1, projectId);
+//			prepInsertStmtSubnets.setString(2, resourceType.name());
+//			prepInsertStmtSubnets.setString(3, jsonMapper.writeValueAsString(data));
+//			prepInsertStmtSubnets.setString(4, jsonMapper.writeValueAsString(data));
+//
+//			prepInsertStmtSubnets.executeUpdate();
+//			return true;
+//
+//		} catch (Exception ex) {
+//			logger.error("Error trying to store resource data within the DB", ex);
+//			return false;
+//		}
+//	}
 
 	
 //	private boolean publishToRabbitMQ(String resourceType, List<Object> data) {

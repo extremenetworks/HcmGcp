@@ -89,12 +89,11 @@ public class ResourceRes {
 	 * Starts a background worker that pulls all resources from the given account.
 	 * This is a non-blocking REST call that just starts that worker in a separate
 	 * thread and immediately responds to the caller. Once the background worker is
-	 * done retrieving all data from AWS it will - update the DB - publish the data
+	 * done retrieving all data from GCP it will a) update the DB and b) publish the data
 	 * to RabbitMQ
 	 * 
-	 * @param accountId
-	 * @param accessKeyId
-	 * @param accessKeySecret
+	 * @param projectId		Google cloud project ID
+	 * @serialData authFileContent	Content of the JSON auth file for the service account to use
 	 * @return
 	 */
 	@POST
