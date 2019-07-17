@@ -22,12 +22,11 @@ import com.google.api.services.compute.model.Subnetwork;
 import com.google.api.services.compute.model.Zone;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.Timestamp;
-import com.google.cloud.datastore.Blob;
-import com.google.cloud.datastore.BlobValue;
 import com.google.cloud.datastore.Datastore;
 import com.google.cloud.datastore.DatastoreOptions;
 import com.google.cloud.datastore.Entity;
 import com.google.cloud.datastore.Key;
+import com.google.cloud.datastore.StringValue;
 import com.rabbitmq.client.Channel;
 
 import org.apache.logging.log4j.LogManager;
@@ -56,7 +55,7 @@ public class ResourcesWorker implements Runnable {
 	private static final JsonFactory jsonFactory = new JsonFactory();
 	private final SimpleDateFormat dateFormatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 	private final String SRC_SYS_TYPE = "GCP";
-	private final String GCP_DATASTORE_ENTITY_KIND = "GCP_Resources";
+	private final String GCP_DS_ENTITY_KIND_GCP_RESOURCES = "GCP_Resources";
 
 	private enum RESOURCE_TYPES {
 		VM, Firewall, Network, Subnet, Region, Zone
@@ -241,16 +240,24 @@ public class ResourcesWorker implements Runnable {
 			String name = resourceType.name();
 
 			// The Cloud Datastore key for the new entity
-			Key entityKey = datastore.newKeyFactory().setKind(GCP_DATASTORE_ENTITY_KIND).newKey(name);
+			Key entityKey = datastore.newKeyFactory().setKind(GCP_DS_ENTITY_KIND_GCP_RESOURCES).newKey(name);
 
 			// The resource data can be quite large - have to use a Blob for this to work
 			// (instead of string)
-			Blob resourceDataAsBlob = Blob.copyFrom(jsonMapper.writeValueAsString(data).getBytes());
+			// Blob resourceDataAsBlob =
+			// Blob.copyFrom(jsonMapper.writeValueAsString(data).getBytes());
 
-			// Prepare the new entity
-			Entity dataEntity = Entity.newBuilder(entityKey).set("lastUpdated", Timestamp.now())
-					.set("projectId", projectId).set("resourceType", resourceType.name())
-					.set("resourceData", BlobValue.newBuilder(resourceDataAsBlob).setExcludeFromIndexes(true).build())
+			// // Prepare the new entity
+			// Entity dataEntity = Entity.newBuilder(entityKey).set("lastUpdated",
+			// Timestamp.now())
+			// .set("projectId", projectId).set("resourceType", resourceType.name())
+			// .set("resourceData",
+			// BlobValue.newBuilder(resourceDataAsBlob).setExcludeFromIndexes(true).build())
+			// .build();
+			Entity dataEntity = Entity
+					.newBuilder(entityKey).set("lastUpdated", Timestamp.now()).set("projectId", projectId)
+					.set("resourceType", resourceType.name()).set("resourceData", StringValue
+							.newBuilder(jsonMapper.writeValueAsString(data)).setExcludeFromIndexes(true).build())
 					.build();
 
 			logger.debug("About to update / write this entity towards GCP datastore:"

@@ -22,6 +22,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.datastore.Datastore;
 import com.google.cloud.datastore.DatastoreOptions;
+import com.google.cloud.datastore.Entity;
+import com.google.cloud.datastore.Query;
+import com.google.cloud.datastore.QueryResults;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
@@ -48,6 +51,8 @@ public class ResourceRes {
 	private ExecutorService executor;
 
 	private final SimpleDateFormat dateFormatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
+	private final String GCP_DS_ENTITY_KIND_GCP_RESOURCES = "GCP_Resources";
 
 	public ResourceRes() {
 
@@ -80,20 +85,6 @@ public class ResourceRes {
 
 		return dbResourceData;
 	}
-
-	/**
-	 * Retrieves all resources (VMs, subnets, networks, etc.) for the given project
-	 * ID from the DB
-	 */
-	// @GET
-	// @Path("billingInfo")
-	// public String retrieveBillingInfo(@QueryParam("projectId") String projectId)
-	// {
-
-	// String dbResourceData = retrieveDataFromDb(projectId);
-
-	// return dbResourceData;
-	// }
 
 	/**
 	 * Starts a background worker that pulls all resources from the given account.
@@ -177,20 +168,15 @@ public class ResourceRes {
 				return "";
 			}
 
-			// Retrieve entity
-			Entity retrieved = datastore.get(taskKey);
+			// Query to retrieve all types of entities from GCP Datastore - Firewalls, VMs,
+			// etc.
+			Query<Entity> query = Query.newEntityQueryBuilder().setKind(GCP_DS_ENTITY_KIND_GCP_RESOURCES)
+					// .setFilter(CompositeFilter.and(PropertyFilter.eq("done", false),
+					// PropertyFilter.eq("priority", 4)))
+					.build();
 
-			InputStream resourceDataIs = retrieved.getBlob("resourceData").asInputStream();
-
-			ByteArrayOutputStream result = new ByteArrayOutputStream();
-			byte[] buffer = new byte[1024];
-			int length;
-			while ((length = resourceDataIs.read(buffer)) != -1) {
-				result.write(buffer, 0, length);
-			}
-
-			System.out.printf("Retrieved " + taskKey.getName() + ": " + retrieved.getString("resourceType")
-					+ " - data: " + result.toString(StandardCharsets.UTF_8.name()));
+			// Retrieve all resource data
+			QueryResults<Entity> queryResults = datastore.run(query);
 
 			/*
 			 * Start building the JSON string which contains some meta data. Example:
@@ -213,12 +199,16 @@ public class ResourceRes {
 			 */
 			jsonGen.writeArrayFieldStart("data");
 
-			while (rs.next()) {
+			while (queryResults.hasNext()) {
 
-				String resourceType = rs.getString("resourceType");
-				logger.debug("Retrieved next DB row: " + ", lastUpdated: " + rs.getString("lastUpdated")
-						+ ", resourceType: " + rs.getString("resourceType") + ", resourceData: "
-						+ rs.getString("resourceData").substring(0, 200) + "...");
+				Entity resourceDataEntity = queryResults.next();
+				String resourceType = resourceDataEntity.getString("resourceType");
+
+				// logger.debug("Retrieved next DB entity: " + ", lastUpdated: "
+				// + resourceDataEntity.getTimestamp("lastUpdated") + ", resourceType: " +
+				// resourceType
+				// + ", resourceData: " +
+				// resourceDataEntity.getString("resourceData").substring(0, 200) + "...");
 
 				if (resourceType != null && !resourceType.isEmpty()) {
 
@@ -229,12 +219,13 @@ public class ResourceRes {
 					 * "lastUpdated": "2019-04-05 15:22:38", "resourceType": "Subnet",
 					 * "resourceData": [ ... list of subnets ... ]
 					 */
-					jsonGen.writeStringField("lastUpdated", dateFormatter.format(rs.getTimestamp("lastUpdated")));
-					jsonGen.writeStringField("resourceType", rs.getString("resourceType"));
+					jsonGen.writeStringField("lastUpdated",
+							dateFormatter.format(resourceDataEntity.getTimestamp("lastUpdated").toDate()));
+					jsonGen.writeStringField("resourceType", resourceType);
 
 					// The list of subnets is already stored as a JSON string in the DB
 					jsonGen.writeFieldName("resourceData");
-					jsonGen.writeRawValue(rs.getString("resourceData"));
+					jsonGen.writeRawValue(resourceDataEntity.getString("resourceData"));
 
 					jsonGen.writeEndObject();
 				}
@@ -251,7 +242,7 @@ public class ResourceRes {
 			return outputStream.toString();
 
 		} catch (Exception ex) {
-			logger.error(ex);
+			logger.error("Error retrieving all resource data from GCP Datastore", ex);
 		}
 
 		return "";
