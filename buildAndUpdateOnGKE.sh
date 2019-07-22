@@ -30,8 +30,8 @@ version="$majorBuildVersion$minorBuildVersion"
 echo -e "${GREEN}$(date +%T.%3N) Building new container image with version $version${NC}"
 
 # Build and push the Docker container
-docker build -q -t kurts/ng_hcm_gcp_mgr:$version .
-docker push kurts/ng_hcm_gcp_mgr:$version
+docker build -q -t kurts/hcm_gcp:$version .
+docker push kurts/hcm_gcp:$version
 
 # Store the new build version in the file
 echo $version > build.version
@@ -39,12 +39,14 @@ echo $version > build.version
 # Update the container to the newest image on the deployment on GKE
 # deployment name, then container name and finally new image with version tag
 echo -e "${GREEN}$(date +%T.%3N) Updating GKE container image to version $version${NC}"
-kubectl set image deployment/hcm-gcp hcm-gcp=kurts/ng_hcm_gcp_mgr:$version
+kubectl set image deployment/hcm-gcp hcm-gcp=kurts/hcm_gcp:$version
 
 echo -e "${GREEN}$(date +%T.%3N) Overall script execution time: $(($SECONDS / 60)) minutes and $(($SECONDS % 60)) seconds${NC}"
 
-# Wait for 15 seconds so GKE can deploy the new container using the new image
-sleep 15
+# Wait so GKE can deploy the new container using the new image
+sleepTime=15
+echo -e "$(date +%T.%3N) ${GREEN}Sleeping for $sleepTime seconds before attaching to container logs${NC}"
+sleep $sleepTime
 
 # Attach to the new container's log output
 kubectl logs -f $(kubectl get pod -l app=hcm-gcp -o jsonpath="{.items[0].metadata.name}") -c hcm-gcp

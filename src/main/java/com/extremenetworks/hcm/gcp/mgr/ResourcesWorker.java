@@ -1,9 +1,6 @@
 package com.extremenetworks.hcm.gcp.mgr;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -20,10 +17,8 @@ import com.google.api.services.compute.model.NetworkInterface;
 import com.google.api.services.compute.model.Region;
 import com.google.api.services.compute.model.Subnetwork;
 import com.google.api.services.compute.model.Zone;
-import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.Timestamp;
 import com.google.cloud.datastore.Datastore;
-import com.google.cloud.datastore.DatastoreOptions;
 import com.google.cloud.datastore.Entity;
 import com.google.cloud.datastore.Key;
 import com.google.cloud.datastore.StringValue;
@@ -38,6 +33,7 @@ public class ResourcesWorker implements Runnable {
 	private static ObjectMapper jsonMapper = new ObjectMapper();
 
 	// GCP config
+	private String tenantId;
 	private String projectId;
 	private String authFileContent;
 
@@ -55,17 +51,26 @@ public class ResourcesWorker implements Runnable {
 	private static final JsonFactory jsonFactory = new JsonFactory();
 	private final SimpleDateFormat dateFormatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 	private final String SRC_SYS_TYPE = "GCP";
-	private final String GCP_DS_ENTITY_KIND_GCP_RESOURCES = "GCP_Resources";
+	private final String DS_ENTITY_KIND_GCP_RESOURCES = "GCP_Resources";
+
+	private Datastore datastore;
 
 	private enum RESOURCE_TYPES {
 		VM, Firewall, Network, Subnet, Region, Zone
 	}
 
-	public ResourcesWorker(String projectId, String authFileContent, String RABBIT_QUEUE_NAME, Channel rabbitChannel) {
+	public ResourcesWorker(String tenantId, String projectId, String authFileContent, String RABBIT_QUEUE_NAME,
+			Channel rabbitChannel, Datastore datastore) {
 
+		// Extreme Networks' GCP Datastore connection
+		this.datastore = datastore;
+
+		// Customer tenant and customer GCP project id & corresponding credentials json
+		this.tenantId = tenantId;
 		this.projectId = projectId;
 		this.authFileContent = authFileContent;
 
+		// Rabbit MQ queue / channel
 		this.RABBIT_QUEUE_NAME = RABBIT_QUEUE_NAME;
 		this.rabbitChannel = rabbitChannel;
 
@@ -80,7 +85,8 @@ public class ResourcesWorker implements Runnable {
 	@Override
 	public void run() {
 
-		logger.debug("Starting Background worker to import compute data from GCP for project with ID " + projectId);
+		logger.debug(
+				"Running background worker to import resource data for tenant " + tenantId + " from GCP " + projectId);
 
 		try {
 			GoogleComputeEngineManager computeManager = new GoogleComputeEngineManager();
@@ -94,29 +100,32 @@ public class ResourcesWorker implements Runnable {
 			}
 
 			/* Load the JSON credentials file content */
-			GoogleCredentials gcpCredentials = null;
+			// GoogleCredentials gcpCredentials = null;
 
-			try {
-				InputStream credFileInputStream = new ByteArrayInputStream(
-						authFileContent.getBytes(StandardCharsets.UTF_8));
-				gcpCredentials = GoogleCredentials.fromStream(credFileInputStream);
+			// try {
+			// InputStream credFileInputStream = new ByteArrayInputStream(
+			// authFileContent.getBytes(StandardCharsets.UTF_8));
+			// gcpCredentials = GoogleCredentials.fromStream(credFileInputStream);
 
-			} catch (Exception ex) {
-				logger.error("Error loading the credentials JSON file content for authorizing against the GCP project "
-						+ projectId, ex);
-				return;
-			}
+			// } catch (Exception ex) {
+			// logger.error("Error loading the credentials JSON file content for authorizing
+			// against the GCP project "
+			// + projectId, ex);
+			// return;
+			// }
 
-			Datastore datastore;
+			// Datastore datastore;
 
-			try {
-				datastore = DatastoreOptions.newBuilder().setCredentials(gcpCredentials).setProjectId(projectId).build()
-						.getService();
+			// try {
+			// datastore =
+			// DatastoreOptions.newBuilder().setCredentials(gcpCredentials).setProjectId(projectId).build()
+			// .getService();
 
-			} catch (Exception e) {
-				logger.error("Error while trying to setup the 'compute engine' connection for project " + projectId, e);
-				return;
-			}
+			// } catch (Exception e) {
+			// logger.error("Error while trying to setup the 'compute engine' connection for
+			// project " + projectId, e);
+			// return;
+			// }
 
 			/* Zones */
 			List<Object> allZones = computeManager.retrieveAllZones(projectId);
@@ -127,7 +136,7 @@ public class ResourcesWorker implements Runnable {
 				return;
 			}
 
-			writeToDb(datastore, RESOURCE_TYPES.Zone, allZones);
+			writeToDb(RESOURCE_TYPES.Zone, allZones);
 			publishBasicDataToRabbitMQ(RESOURCE_TYPES.Zone, allZones);
 
 			/* Regions */
@@ -139,7 +148,7 @@ public class ResourcesWorker implements Runnable {
 				return;
 			}
 
-			writeToDb(datastore, RESOURCE_TYPES.Region, allRegions);
+			writeToDb(RESOURCE_TYPES.Region, allRegions);
 			publishBasicDataToRabbitMQ(RESOURCE_TYPES.Region, allRegions);
 
 			/* Instances */
@@ -162,7 +171,7 @@ public class ResourcesWorker implements Runnable {
 					allInstances.addAll(instancesFromZone);
 				}
 
-				writeToDb(datastore, RESOURCE_TYPES.VM, allInstances);
+				writeToDb(RESOURCE_TYPES.VM, allInstances);
 				publishBasicDataToRabbitMQ(RESOURCE_TYPES.VM, allInstances);
 			}
 
@@ -187,7 +196,7 @@ public class ResourcesWorker implements Runnable {
 					allSubnets.addAll(subnetsFromRegion);
 				}
 
-				writeToDb(datastore, RESOURCE_TYPES.Subnet, allSubnets);
+				writeToDb(RESOURCE_TYPES.Subnet, allSubnets);
 				publishBasicDataToRabbitMQ(RESOURCE_TYPES.Subnet, allSubnets);
 			}
 
@@ -200,7 +209,7 @@ public class ResourcesWorker implements Runnable {
 				return;
 			}
 
-			writeToDb(datastore, RESOURCE_TYPES.Firewall, allFirewalls);
+			writeToDb(RESOURCE_TYPES.Firewall, allFirewalls);
 			publishBasicDataToRabbitMQ(RESOURCE_TYPES.Firewall, allFirewalls);
 
 			/* Networks */
@@ -212,7 +221,7 @@ public class ResourcesWorker implements Runnable {
 				return;
 			}
 
-			writeToDb(datastore, RESOURCE_TYPES.Network, allNetworks);
+			writeToDb(RESOURCE_TYPES.Network, allNetworks);
 			publishBasicDataToRabbitMQ(RESOURCE_TYPES.Network, allNetworks);
 
 			logger.debug("Finished retrieving all resources from GCP project " + projectId);
@@ -226,34 +235,22 @@ public class ResourcesWorker implements Runnable {
 	/**
 	 * Writes the given data (Subnets, VMs, etc.) to the DB
 	 * 
-	 * @param datastore    Active GCP Datastore connection
 	 * @param resourceType Valid types: Subnet, VM, etc.
 	 * @param data         Map of resource data. The values can contain any type of
 	 *                     object (subnets, VMs, etc.) and will be written to JSON
 	 *                     data (and then to a Blob) and then stored in the DB
 	 * @return
 	 */
-	private boolean writeToDb(Datastore datastore, RESOURCE_TYPES resourceType, List<Object> data) {
+	private boolean writeToDb(RESOURCE_TYPES resourceType, List<Object> data) {
 
 		try {
 			// The name/ID for the new entity
 			String name = resourceType.name();
 
 			// The Cloud Datastore key for the new entity
-			Key entityKey = datastore.newKeyFactory().setKind(GCP_DS_ENTITY_KIND_GCP_RESOURCES).newKey(name);
+			Key entityKey = datastore.newKeyFactory().setNamespace(tenantId).setKind(DS_ENTITY_KIND_GCP_RESOURCES)
+					.newKey(name);
 
-			// The resource data can be quite large - have to use a Blob for this to work
-			// (instead of string)
-			// Blob resourceDataAsBlob =
-			// Blob.copyFrom(jsonMapper.writeValueAsString(data).getBytes());
-
-			// // Prepare the new entity
-			// Entity dataEntity = Entity.newBuilder(entityKey).set("lastUpdated",
-			// Timestamp.now())
-			// .set("projectId", projectId).set("resourceType", resourceType.name())
-			// .set("resourceData",
-			// BlobValue.newBuilder(resourceDataAsBlob).setExcludeFromIndexes(true).build())
-			// .build();
 			Entity dataEntity = Entity
 					.newBuilder(entityKey).set("lastUpdated", Timestamp.now()).set("projectId", projectId)
 					.set("resourceType", resourceType.name()).set("resourceData", StringValue
@@ -266,23 +263,6 @@ public class ResourcesWorker implements Runnable {
 			// Saves the entity
 			datastore.put(dataEntity);
 
-			// // Retrieve entity
-			// Entity retrieved = datastore.get(taskKey);
-
-			// InputStream resourceDataIs =
-			// retrieved.getBlob("resourceData").asInputStream();
-
-			// ByteArrayOutputStream result = new ByteArrayOutputStream();
-			// byte[] buffer = new byte[1024];
-			// int length;
-			// while ((length = resourceDataIs.read(buffer)) != -1) {
-			// result.write(buffer, 0, length);
-			// }
-
-			// System.out.printf("Retrieved " + taskKey.getName() + ": " +
-			// retrieved.getString("resourceType")
-			// + " - data: " + result.toString(StandardCharsets.UTF_8.name()));
-
 			return true;
 
 		} catch (Exception ex) {
@@ -290,242 +270,6 @@ public class ResourcesWorker implements Runnable {
 			return false;
 		}
 	}
-
-	// @Override
-	// public void run() {
-	//
-	// logger.debug("Starting Background worker to import compute data from GCP for
-	// project with ID " + projectId);
-	//
-	// try {
-	// GoogleComputeEngineManager computeManager = new GoogleComputeEngineManager();
-	// boolean connected = computeManager.createComputeConnection(projectId,
-	// authenticationFileName);
-	//
-	// if (!connected) {
-	// String msg = "Won't be able to retrieve any data from Google Compute Engine
-	// since no authentication/authorization/connection could be established";
-	// logger.error(msg);
-	// rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null,
-	// msg.getBytes("UTF-8"));
-	// return;
-	// }
-	//
-	// java.sql.Connection dbConn = DriverManager.getConnection(dbConnString,
-	// dbUser, dbPassword);
-	//
-	// /* Zones */
-	// List<Object> allZones = computeManager.retrieveAllZones(projectId);
-	// if (allZones == null || allZones.isEmpty()) {
-	// String msg = "Error retrieving zones from GCP - stopping any further
-	// processing";
-	// logger.warn(msg);
-	// rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null,
-	// msg.getBytes("UTF-8"));
-	// return;
-	// }
-	//
-	// writeToDb(dbConn, RESOURCE_TYPES.Zone, allZones);
-	// publishBasicDataToRabbitMQ(RESOURCE_TYPES.Zone, allZones);
-	//// publishToRabbitMQ("Zone", allZones);
-	//
-	// /* Regions */
-	// List<Object> allRegions = computeManager.retrieveAllRegions(projectId);
-	// if (allZones == null || allZones.isEmpty()) {
-	// String msg = "Error retrieving zones from GCP - stopping any further
-	// processing";
-	// logger.warn(msg);
-	// rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null,
-	// msg.getBytes("UTF-8"));
-	// return;
-	// }
-	//
-	// writeToDb(dbConn, RESOURCE_TYPES.Region, allRegions);
-	// publishBasicDataToRabbitMQ(RESOURCE_TYPES.Region, allRegions);
-	//// publishToRabbitMQ("Region", allRegions);
-	//
-	// /* Instances */
-	// if (allZones != null && !allZones.isEmpty()) {
-	//
-	// List<Object> allInstances = new ArrayList<Object>();
-	//
-	// for (Object zoneGeneric : allZones) {
-	//
-	// Zone zone = (Zone) zoneGeneric;
-	// List<Object> instancesFromZone =
-	// computeManager.retrieveInstancesForZone(projectId, zone.getName());
-	// if (instancesFromZone == null) {
-	// String msg = "Error retrieving instances from GCP zone " + zone.getName()
-	// + " - stopping any further processing";
-	// logger.warn(msg);
-	// rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null,
-	// msg.getBytes("UTF-8"));
-	// return;
-	// }
-	//
-	//// logger.debug("Found " + instancesFromZone.size() + " instances from zone "
-	// + zone);
-	// allInstances.addAll(instancesFromZone);
-	// }
-	//
-	// writeToDb(dbConn, RESOURCE_TYPES.VM, allInstances);
-	// publishBasicDataToRabbitMQ(RESOURCE_TYPES.VM, allInstances);
-	// }
-	//
-	// /* Subnets */
-	// if (allRegions != null && !allRegions.isEmpty()) {
-	//
-	// List<Object> allSubnets = new ArrayList<Object>();
-	//
-	// for (Object regionGeneric : allRegions) {
-	//
-	// Region region = (Region) regionGeneric;
-	// List<Object> subnetsFromRegion =
-	// computeManager.retrieveSubnetworksForRegion(projectId,
-	// region.getName());
-	// if (subnetsFromRegion == null) {
-	// String msg = "Error retrieving subnets from GCP region " + region.getName()
-	// + " - stopping any further processing";
-	// logger.warn(msg);
-	// rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null,
-	// msg.getBytes("UTF-8"));
-	// return;
-	// }
-	//
-	// allSubnets.addAll(subnetsFromRegion);
-	// }
-	//
-	// writeToDb(dbConn, RESOURCE_TYPES.Subnet, allSubnets);
-	// publishBasicDataToRabbitMQ(RESOURCE_TYPES.Subnet, allSubnets);
-	//// publishToRabbitMQ("Subnet", allSubnets);
-	// }
-	//
-	// /* Firewalls */
-	// List<Object> allFirewalls = computeManager.retrieveFirewalls(projectId, "",
-	// false);
-	// if (allFirewalls == null || allFirewalls.isEmpty()) {
-	// String msg = "Error retrieving firewalls from GCP - stopping any further
-	// processing";
-	// logger.warn(msg);
-	// rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null,
-	// msg.getBytes("UTF-8"));
-	// return;
-	// }
-	//
-	// writeToDb(dbConn, RESOURCE_TYPES.Firewall, allFirewalls);
-	// publishBasicDataToRabbitMQ(RESOURCE_TYPES.Firewall, allFirewalls);
-	//
-	//
-	// /* Networks */
-	// List<Object> allNetworks = computeManager.retrieveAllNetworks(projectId);
-	// if (allNetworks == null || allNetworks.isEmpty()) {
-	// String msg = "Error retrieving networks from GCP - stopping any further
-	// processing";
-	// logger.warn(msg);
-	// rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null,
-	// msg.getBytes("UTF-8"));
-	// return;
-	// }
-	//
-	// writeToDb(dbConn, RESOURCE_TYPES.Network, allNetworks);
-	// publishBasicDataToRabbitMQ(RESOURCE_TYPES.Network, allNetworks);
-	//
-	//
-	// logger.debug("Finished retrieving all resources from GCP project " +
-	// projectId);
-	//
-	// } catch (Exception ex) {
-	// logger.error(ex);
-	// return;
-	// }
-	// }
-	//
-	//
-
-	// /**
-	// * Writes the given data (Subnets, VMs, etc.) to the DB
-	// *
-	// * @param dbConn Active DB connection
-	// * @param resourceType Valid types: Subnet, VM,
-	// * @param data Map of resource data. The values can contain any type of
-	// * object (subnets, VMs, etc.) and will be written to JSON
-	// * data and then stored in the DB
-	// * @return
-	// */
-	// private boolean writeToDb(java.sql.Connection dbConn, RESOURCE_TYPES
-	// resourceType, List<Object> data) {
-	//
-	// try {
-	// String sqlInsertStmtSubnets = "INSERT INTO gcp (lastUpdated, projectId,
-	// resourceType, resourceData) "
-	// + "VALUES (NOW(), ?, ?, ?) " + "ON DUPLICATE KEY UPDATE lastUpdated=NOW(),
-	// resourceData=?";
-	//
-	// PreparedStatement prepInsertStmtSubnets =
-	// dbConn.prepareStatement(sqlInsertStmtSubnets);
-	//
-	// prepInsertStmtSubnets.setString(1, projectId);
-	// prepInsertStmtSubnets.setString(2, resourceType.name());
-	// prepInsertStmtSubnets.setString(3, jsonMapper.writeValueAsString(data));
-	// prepInsertStmtSubnets.setString(4, jsonMapper.writeValueAsString(data));
-	//
-	// prepInsertStmtSubnets.executeUpdate();
-	// return true;
-	//
-	// } catch (Exception ex) {
-	// logger.error("Error trying to store resource data within the DB", ex);
-	// return false;
-	// }
-	// }
-
-	// private boolean publishToRabbitMQ(String resourceType, List<Object> data) {
-	//
-	// try {
-	// ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-	// JsonGenerator jsonGen = jsonFactory.createGenerator(outputStream,
-	// JsonEncoding.UTF8);
-	//
-	// jsonGen.writeStartObject();
-	//
-	// jsonGen.writeStringField("dataType", "resources");
-	// jsonGen.writeStringField("sourceSystemType", "gcp");
-	// jsonGen.writeStringField("sourceSystemProjectId", projectId);
-	//
-	// jsonGen.writeArrayFieldStart("data");
-	//
-	// Date now = new Date();
-	//
-	// jsonGen.writeStartObject();
-	//
-	// jsonGen.writeStringField("lastUpdated", dateFormatter.format(now));
-	// jsonGen.writeStringField("resourceType", resourceType);
-	// jsonGen.writeFieldName("resourceData");
-	//
-	// jsonGen.writeStartArray();
-	// jsonGen.writeRawValue(jsonMapper.writeValueAsString(data));
-	// jsonGen.writeEndArray();
-	//
-	// jsonGen.writeEndObject();
-	//
-	// jsonGen.writeEndArray();
-	// jsonGen.writeEndObject();
-	//
-	// jsonGen.close();
-	// outputStream.close();
-	//
-	// logger.debug("Forwarding updated list of " + resourceType + "s to the message
-	// queue " + RABBIT_QUEUE_NAME);
-	// rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null,
-	// outputStream.toString().getBytes("UTF-8"));
-	//
-	// return true;
-	//
-	// } catch (Exception ex) {
-	// logger.error("Error trying to publish resource data to RabbitMQ", ex);
-	// return false;
-	// }
-	//
-	// }
 
 	private boolean publishBasicDataToRabbitMQ(RESOURCE_TYPES resourceType, List<Object> data) {
 
@@ -958,3 +702,239 @@ public class ResourcesWorker implements Runnable {
 		}
 	}
 }
+
+// @Override
+// public void run() {
+//
+// logger.debug("Starting Background worker to import compute data from GCP for
+// project with ID " + projectId);
+//
+// try {
+// GoogleComputeEngineManager computeManager = new GoogleComputeEngineManager();
+// boolean connected = computeManager.createComputeConnection(projectId,
+// authenticationFileName);
+//
+// if (!connected) {
+// String msg = "Won't be able to retrieve any data from Google Compute Engine
+// since no authentication/authorization/connection could be established";
+// logger.error(msg);
+// rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null,
+// msg.getBytes("UTF-8"));
+// return;
+// }
+//
+// java.sql.Connection dbConn = DriverManager.getConnection(dbConnString,
+// dbUser, dbPassword);
+//
+// /* Zones */
+// List<Object> allZones = computeManager.retrieveAllZones(projectId);
+// if (allZones == null || allZones.isEmpty()) {
+// String msg = "Error retrieving zones from GCP - stopping any further
+// processing";
+// logger.warn(msg);
+// rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null,
+// msg.getBytes("UTF-8"));
+// return;
+// }
+//
+// writeToDb(dbConn, RESOURCE_TYPES.Zone, allZones);
+// publishBasicDataToRabbitMQ(RESOURCE_TYPES.Zone, allZones);
+//// publishToRabbitMQ("Zone", allZones);
+//
+// /* Regions */
+// List<Object> allRegions = computeManager.retrieveAllRegions(projectId);
+// if (allZones == null || allZones.isEmpty()) {
+// String msg = "Error retrieving zones from GCP - stopping any further
+// processing";
+// logger.warn(msg);
+// rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null,
+// msg.getBytes("UTF-8"));
+// return;
+// }
+//
+// writeToDb(dbConn, RESOURCE_TYPES.Region, allRegions);
+// publishBasicDataToRabbitMQ(RESOURCE_TYPES.Region, allRegions);
+//// publishToRabbitMQ("Region", allRegions);
+//
+// /* Instances */
+// if (allZones != null && !allZones.isEmpty()) {
+//
+// List<Object> allInstances = new ArrayList<Object>();
+//
+// for (Object zoneGeneric : allZones) {
+//
+// Zone zone = (Zone) zoneGeneric;
+// List<Object> instancesFromZone =
+// computeManager.retrieveInstancesForZone(projectId, zone.getName());
+// if (instancesFromZone == null) {
+// String msg = "Error retrieving instances from GCP zone " + zone.getName()
+// + " - stopping any further processing";
+// logger.warn(msg);
+// rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null,
+// msg.getBytes("UTF-8"));
+// return;
+// }
+//
+//// logger.debug("Found " + instancesFromZone.size() + " instances from zone "
+// + zone);
+// allInstances.addAll(instancesFromZone);
+// }
+//
+// writeToDb(dbConn, RESOURCE_TYPES.VM, allInstances);
+// publishBasicDataToRabbitMQ(RESOURCE_TYPES.VM, allInstances);
+// }
+//
+// /* Subnets */
+// if (allRegions != null && !allRegions.isEmpty()) {
+//
+// List<Object> allSubnets = new ArrayList<Object>();
+//
+// for (Object regionGeneric : allRegions) {
+//
+// Region region = (Region) regionGeneric;
+// List<Object> subnetsFromRegion =
+// computeManager.retrieveSubnetworksForRegion(projectId,
+// region.getName());
+// if (subnetsFromRegion == null) {
+// String msg = "Error retrieving subnets from GCP region " + region.getName()
+// + " - stopping any further processing";
+// logger.warn(msg);
+// rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null,
+// msg.getBytes("UTF-8"));
+// return;
+// }
+//
+// allSubnets.addAll(subnetsFromRegion);
+// }
+//
+// writeToDb(dbConn, RESOURCE_TYPES.Subnet, allSubnets);
+// publishBasicDataToRabbitMQ(RESOURCE_TYPES.Subnet, allSubnets);
+//// publishToRabbitMQ("Subnet", allSubnets);
+// }
+//
+// /* Firewalls */
+// List<Object> allFirewalls = computeManager.retrieveFirewalls(projectId, "",
+// false);
+// if (allFirewalls == null || allFirewalls.isEmpty()) {
+// String msg = "Error retrieving firewalls from GCP - stopping any further
+// processing";
+// logger.warn(msg);
+// rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null,
+// msg.getBytes("UTF-8"));
+// return;
+// }
+//
+// writeToDb(dbConn, RESOURCE_TYPES.Firewall, allFirewalls);
+// publishBasicDataToRabbitMQ(RESOURCE_TYPES.Firewall, allFirewalls);
+//
+//
+// /* Networks */
+// List<Object> allNetworks = computeManager.retrieveAllNetworks(projectId);
+// if (allNetworks == null || allNetworks.isEmpty()) {
+// String msg = "Error retrieving networks from GCP - stopping any further
+// processing";
+// logger.warn(msg);
+// rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null,
+// msg.getBytes("UTF-8"));
+// return;
+// }
+//
+// writeToDb(dbConn, RESOURCE_TYPES.Network, allNetworks);
+// publishBasicDataToRabbitMQ(RESOURCE_TYPES.Network, allNetworks);
+//
+//
+// logger.debug("Finished retrieving all resources from GCP project " +
+// projectId);
+//
+// } catch (Exception ex) {
+// logger.error(ex);
+// return;
+// }
+// }
+//
+//
+
+// /**
+// * Writes the given data (Subnets, VMs, etc.) to the DB
+// *
+// * @param dbConn Active DB connection
+// * @param resourceType Valid types: Subnet, VM,
+// * @param data Map of resource data. The values can contain any type of
+// * object (subnets, VMs, etc.) and will be written to JSON
+// * data and then stored in the DB
+// * @return
+// */
+// private boolean writeToDb(java.sql.Connection dbConn, RESOURCE_TYPES
+// resourceType, List<Object> data) {
+//
+// try {
+// String sqlInsertStmtSubnets = "INSERT INTO gcp (lastUpdated, projectId,
+// resourceType, resourceData) "
+// + "VALUES (NOW(), ?, ?, ?) " + "ON DUPLICATE KEY UPDATE lastUpdated=NOW(),
+// resourceData=?";
+//
+// PreparedStatement prepInsertStmtSubnets =
+// dbConn.prepareStatement(sqlInsertStmtSubnets);
+//
+// prepInsertStmtSubnets.setString(1, projectId);
+// prepInsertStmtSubnets.setString(2, resourceType.name());
+// prepInsertStmtSubnets.setString(3, jsonMapper.writeValueAsString(data));
+// prepInsertStmtSubnets.setString(4, jsonMapper.writeValueAsString(data));
+//
+// prepInsertStmtSubnets.executeUpdate();
+// return true;
+//
+// } catch (Exception ex) {
+// logger.error("Error trying to store resource data within the DB", ex);
+// return false;
+// }
+// }
+
+// private boolean publishToRabbitMQ(String resourceType, List<Object> data) {
+//
+// try {
+// ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+// JsonGenerator jsonGen = jsonFactory.createGenerator(outputStream,
+// JsonEncoding.UTF8);
+//
+// jsonGen.writeStartObject();
+//
+// jsonGen.writeStringField("dataType", "resources");
+// jsonGen.writeStringField("sourceSystemType", "gcp");
+// jsonGen.writeStringField("sourceSystemProjectId", projectId);
+//
+// jsonGen.writeArrayFieldStart("data");
+//
+// Date now = new Date();
+//
+// jsonGen.writeStartObject();
+//
+// jsonGen.writeStringField("lastUpdated", dateFormatter.format(now));
+// jsonGen.writeStringField("resourceType", resourceType);
+// jsonGen.writeFieldName("resourceData");
+//
+// jsonGen.writeStartArray();
+// jsonGen.writeRawValue(jsonMapper.writeValueAsString(data));
+// jsonGen.writeEndArray();
+//
+// jsonGen.writeEndObject();
+//
+// jsonGen.writeEndArray();
+// jsonGen.writeEndObject();
+//
+// jsonGen.close();
+// outputStream.close();
+//
+// logger.debug("Forwarding updated list of " + resourceType + "s to the message
+// queue " + RABBIT_QUEUE_NAME);
+// rabbitChannel.basicPublish("", RABBIT_QUEUE_NAME, null,
+// outputStream.toString().getBytes("UTF-8"));
+//
+// return true;
+//
+// } catch (Exception ex) {
+// logger.error("Error trying to publish resource data to RabbitMQ", ex);
+// return false;
+// }
+//
+// }
