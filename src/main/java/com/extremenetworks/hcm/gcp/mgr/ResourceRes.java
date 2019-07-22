@@ -20,6 +20,7 @@ import com.google.cloud.datastore.DatastoreOptions;
 import com.google.cloud.datastore.Entity;
 import com.google.cloud.datastore.Query;
 import com.google.cloud.datastore.QueryResults;
+import com.google.cloud.datastore.StructuredQuery.PropertyFilter;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
@@ -55,15 +56,18 @@ public class ResourceRes {
 	public ResourceRes() {
 
 		try {
+			// Setup Rabbit connection
 			ConnectionFactory factory = new ConnectionFactory();
 			factory.setHost(rabbitServer);
-
 			Connection connection = factory.newConnection();
 			rabbitChannel = connection.createChannel();
 			rabbitChannel.queueDeclare(RABBIT_QUEUE_NAME, false, false, false, null);
 
+			// For long running background threads that pull data from customers' GCP
+			// accounts
 			executor = Executors.newCachedThreadPool();
 
+			// Extreme Networks' GCP datastore
 			datastore = DatastoreOptions.getDefaultInstance().getService();
 
 		} catch (Exception ex) {
@@ -72,173 +76,39 @@ public class ResourceRes {
 	}
 
 	/**
-	 * Retrieves all resources (VMs, subnets, networks, etc.) for the given project
-	 * ID from the DB
+	 * Retrieves all resource data (VMs, subnets, networks, etc.) for the given
+	 * tenant and account from the Datastore. Generate a JSON-formated string.
+	 * Example: { "dataType": "resources", "sourceSystemType": "gcp",
+	 * "sourceSystemProjectId": "418454969983", "data": [ { "lastUpdated":
+	 * "2019-04-05 15:22:38", "resourceType": "Subnet", "resourceData": [ { "tags":
+	 * [], "state": "available", "vpcId": "vpc-d3358ab6", ... }, ...
+	 * 
+	 * @param tenantId
+	 * @param accountId
 	 */
 	@GET
 	@Path("all")
 	@Produces(MediaType.APPLICATION_JSON)
 	public String retrieveAllResources(@QueryParam("tenantId") String tenantId,
-			@QueryParam("projectId") String projectId) {
+			@QueryParam("accountId") String accountId) {
 
-		String dbResourceData = retrieveDataFromDb(tenantId, projectId);
-
-		return dbResourceData;
-	}
-
-	/**
-	 * Starts a background worker that pulls all resources from the given account.
-	 * This is a non-blocking REST call that just starts that worker in a separate
-	 * thread and immediately responds to the caller. Once the background worker is
-	 * done retrieving all data from GCP it will a) update the DB and b) publish the
-	 * data to RabbitMQ
-	 * 
-	 * @param projectId Google cloud project ID
-	 * @serialData authFileContent Content of the JSON auth file for the service
-	 *             account to use
-	 * @return
-	 */
-	@GET
-	@Path("triggerUpdate")
-	@Produces(MediaType.APPLICATION_JSON)
-	public String triggerUpdateAllResources(@QueryParam("tenantId") String tenantId,
-			@QueryParam("projectId") String projectId) {
+		logger.debug("Retrieving all resource data for tenant id " + tenantId + " and account id " + accountId
+				+ " from the GCP Datastore");
 
 		try {
-			if (tenantId == null || tenantId.isEmpty()) {
+			/* Retrieve the config for the given tenant & account from Datastore */
+			AccountConfig accountConfig = new AccountConfig();
+			String accountValidationMsg = retrieveAccountConfigFromDb(tenantId, accountId, accountConfig);
 
-				String msg = "Missing tenantId";
-				logger.warn(msg);
-				return jsonMapper.writeValueAsString(new ResourcesWebResponse(1, msg));
-			}
-
-			if (projectId == null || projectId.isEmpty()) {
-
-				String msg = "Missing projectId";
-				logger.warn(msg);
-				return jsonMapper.writeValueAsString(new ResourcesWebResponse(2, msg));
-			}
-
-			// Retrieve all configured GCP source systems for this tenant
-			logger.debug("Trying to retrieve the GCP source system config for tenant id " + tenantId
-					+ " and project id " + projectId);
-
-			Query<Entity> query = Query.newEntityQueryBuilder().setNamespace(tenantId)
-					.setKind(DS_ENTITY_KIND_SRC_SYS_GCP).build();
-
-			QueryResults<Entity> queryResults = datastore.run(query);
-
-			String authFileContent = "";
-
-			while (queryResults.hasNext()) {
-
-				Entity srcSysEntity = queryResults.next();
-				String srcSysProjectId = srcSysEntity.getString("projectId");
-
-				if (projectId.equals(srcSysProjectId)) {
-					authFileContent = srcSysEntity.getString("authFileContent");
-					logger.debug("Found configured GCP source system with authFileContent" + authFileContent);
-					break;
-				}
-			}
-
-			if (authFileContent.isEmpty()) {
-
-				String msg = "Could not find a configured GCP source system for tenant id " + tenantId
-						+ " and project id " + projectId;
-				logger.warn(msg);
-				return jsonMapper.writeValueAsString(new ResourcesWebResponse(3, msg));
-			}
-
-			/* Config and start the background worker */
-			logger.debug("Creating background worker to import resource data from GPC project " + projectId
-					+ " for tenant " + tenantId);
-
-			executor.execute(new ResourcesWorker(tenantId, projectId, authFileContent, RABBIT_QUEUE_NAME, rabbitChannel,
-					datastore));
-
-			return jsonMapper.writeValueAsString(
-					new ResourcesWebResponse(0, "Successfully triggered an update of all resource data"));
-
-		} catch (Exception ex) {
-			String msg = "General Error";
-			logger.error(msg, ex);
-			String returnValue;
-			try {
-				returnValue = jsonMapper.writeValueAsString(new ResourcesWebResponse(4, msg));
-				return returnValue;
-			} catch (Exception ex2) {
-				return msg;
-			}
-		}
-	}
-
-	/**
-	 * Retrieves all resource data for the given account from the DB. Generate a
-	 * JSON-formated string. Example: { "dataType": "resources", "sourceSystemType":
-	 * "gcp", "sourceSystemProjectId": "418454969983", "data": [ { "lastUpdated":
-	 * "2019-04-05 15:22:38", "resourceType": "Subnet", "resourceData": [ { "tags":
-	 * [], "state": "available", "vpcId": "vpc-d3358ab6", ... }, ...
-	 * 
-	 * @param projectId
-	 * @return
-	 */
-	private String retrieveDataFromDb(String tenantId, String projectId) {
-
-		logger.debug("Retrieving all resource data for tenant id " + tenantId + " from GCP project " + projectId
-				+ " from the DB");
-
-		try {
-			if (tenantId == null || tenantId.isEmpty()) {
-
-				String msg = "Missing URL parameter tenantId";
-				logger.warn(msg);
-				return jsonMapper.writeValueAsString(new ResourcesWebResponse(1, msg));
-			}
-
-			if (projectId == null || projectId.isEmpty()) {
-
-				String msg = "Missing URL parameter projectId";
-				logger.warn(msg);
-				return jsonMapper.writeValueAsString(new ResourcesWebResponse(2, msg));
-			}
-
-			// Retrieve all configured GCP source systems for this tenant
-			logger.debug("Trying to retrieve the GCP source system config for tenant id " + tenantId
-					+ " and project id " + projectId);
-
-			Query<Entity> query = Query.newEntityQueryBuilder().setNamespace(tenantId)
-					.setKind(DS_ENTITY_KIND_SRC_SYS_GCP).build();
-
-			QueryResults<Entity> queryResults = datastore.run(query);
-
-			String authFileContent = "";
-
-			while (queryResults.hasNext()) {
-
-				Entity srcSysEntity = queryResults.next();
-				String srcSysProjectId = srcSysEntity.getString("projectId");
-
-				if (projectId.equals(srcSysProjectId)) {
-					authFileContent = srcSysEntity.getString("authFileContent");
-					logger.debug("Found configured GCP source system with authFileContent" + authFileContent);
-					break;
-				}
-			}
-
-			if (authFileContent.isEmpty()) {
-
-				String msg = "Could not find a configured GCP source system for tenant id " + tenantId
-						+ " and project id " + projectId;
-				logger.warn(msg);
-				return jsonMapper.writeValueAsString(new ResourcesWebResponse(3, msg));
+			if (!accountValidationMsg.isEmpty()) {
+				return accountValidationMsg;
 			}
 
 			// Retrieve all types of resources from GCP Datastore - Firewalls, VMs, etc.
 			Query<Entity> queryResources = Query.newEntityQueryBuilder().setNamespace(tenantId)
 					.setKind(DS_ENTITY_KIND_GCP_RESOURCES)
-					// .setFilter(CompositeFilter.and(PropertyFilter.eq("done", false),
-					// PropertyFilter.eq("priority", 4)))
+					.setFilter(PropertyFilter.hasAncestor(datastore.newKeyFactory().setKind(DS_ENTITY_KIND_SRC_SYS_GCP)
+							.setNamespace(tenantId).newKey(accountId)))
 					.build();
 
 			QueryResults<Entity> queryResourcesResults = datastore.run(queryResources);
@@ -256,7 +126,7 @@ public class ResourceRes {
 
 			jsonGen.writeStringField("dataType", "resources");
 			jsonGen.writeStringField("sourceSystemType", "gcp");
-			jsonGen.writeStringField("sourceSystemProjectId", projectId);
+			jsonGen.writeStringField("sourceSystemProjectId", accountConfig.getProjectId());
 
 			/*
 			 * The "data" field will contain an array of objects. Each object will contain
@@ -288,7 +158,6 @@ public class ResourceRes {
 
 					jsonGen.writeEndObject();
 				}
-
 			}
 
 			// Finalize the JSON string and output stream
@@ -301,10 +170,151 @@ public class ResourceRes {
 			return outputStream.toString();
 
 		} catch (Exception ex) {
-			logger.error("Error retrieving all resource data from GCP Datastore", ex);
+			String msg = "General Error";
+			logger.error(msg, ex);
+			String returnValue;
+			try {
+				returnValue = jsonMapper.writeValueAsString(new ResourcesWebResponse(4, msg));
+				return returnValue;
+			} catch (Exception ex2) {
+				return msg;
+			}
 		}
+	}
 
-		return "";
+	/**
+	 * Starts a background worker that pulls all resources from the given account.
+	 * This is a non-blocking REST call that just starts that worker in a separate
+	 * thread and immediately responds to the caller. Once the background worker is
+	 * done retrieving all data from GCP it will a) update the DB and b) publish the
+	 * data to RabbitMQ
+	 * 
+	 * @param tenantId  Extreme Networks configured tenant id
+	 * @param accountId Extreme Networks configured account id
+	 * @return
+	 */
+	@GET
+	@Path("triggerUpdate")
+	@Produces(MediaType.APPLICATION_JSON)
+	public String triggerUpdateAllResources(@QueryParam("tenantId") String tenantId,
+			@QueryParam("accountId") String accountId) {
+
+		try {
+			/* Retrieve the config for the given tenant & account from Datastore */
+			AccountConfig accountConfig = new AccountConfig();
+			String accountValidationMsg = retrieveAccountConfigFromDb(tenantId, accountId, accountConfig);
+
+			if (!accountValidationMsg.isEmpty()) {
+				return accountValidationMsg;
+			}
+
+			/* Config and start the background worker */
+			logger.debug("Creating background worker to import resource data from GPC project "
+					+ accountConfig.getProjectId() + " for tenant " + tenantId);
+
+			executor.execute(new ResourcesWorker(accountConfig, RABBIT_QUEUE_NAME, rabbitChannel, datastore));
+
+			return jsonMapper.writeValueAsString(
+					new ResourcesWebResponse(0, "Successfully triggered an update of all resource data"));
+
+		} catch (Exception ex) {
+			String msg = "General Error";
+			logger.error(msg, ex);
+			String returnValue;
+			try {
+				returnValue = jsonMapper.writeValueAsString(new ResourcesWebResponse(4, msg));
+				return returnValue;
+			} catch (Exception ex2) {
+				return msg;
+			}
+		}
+	}
+
+	/**
+	 * Retrieves the account config for the given tenant and account from Datastore.
+	 * Stores the matching account config in the provided accountConfig parameter.
+	 * Also validates the given tenantId and accountId params.
+	 * 
+	 * @param tenantId      Extreme Networks configured tenant id
+	 * @param accountId     Extreme Networks configured account id
+	 * @param accountConfig Empty, instantiated AccountConfig object that will be
+	 *                      populated with the account config if found in Datastore
+	 * @return An empty string if no error occured. If there was a problem, it
+	 *         returns a JSON-configured string that can be used as an HTTP reponse.
+	 */
+	private String retrieveAccountConfigFromDb(String tenantId, String accountId, AccountConfig accountConfig) {
+
+		try {
+			if (tenantId == null || tenantId.isEmpty()) {
+
+				String msg = "Missing URL parameter tenantId";
+				logger.warn(msg);
+				return jsonMapper.writeValueAsString(new ResourcesWebResponse(1, msg));
+			}
+
+			if (accountId == null || accountId.isEmpty()) {
+
+				String msg = "Missing URL parameter accountId";
+				logger.warn(msg);
+				return jsonMapper.writeValueAsString(new ResourcesWebResponse(2, msg));
+			}
+
+			// Retrieve all configured GCP source systems for this tenant
+			logger.debug("Retrieving config for tenant id " + tenantId + " and account id " + accountId);
+
+			Query<Entity> query = Query.newEntityQueryBuilder().setNamespace(tenantId)
+					.setKind(DS_ENTITY_KIND_SRC_SYS_GCP).build();
+
+			QueryResults<Entity> queryResults = datastore.run(query);
+
+			while (queryResults.hasNext()) {
+
+				Entity srcSysEntity = queryResults.next();
+				String srcSysAccountId = srcSysEntity.getKey().getName();
+
+				// Try to match the given account id with the configured account (Entity key
+				// name == accountId)
+				if (accountId.equals(srcSysAccountId)) {
+
+					if (srcSysEntity.isNull("projectId") || srcSysEntity.isNull("credentialsFileContent")) {
+						String msg = "Found account config but it is missing property projectId and/or credentialsFileContent";
+						logger.warn(msg);
+						return jsonMapper.writeValueAsString(new ResourcesWebResponse(3, msg));
+					}
+
+					if (srcSysEntity.getString("projectId").isEmpty()
+							|| srcSysEntity.getString("credentialsFileContent").isEmpty()) {
+						String msg = "Found account config but property projectId and/or credentialsFileContent is empty";
+						logger.warn(msg);
+						return jsonMapper.writeValueAsString(new ResourcesWebResponse(4, msg));
+					}
+
+					accountConfig.setTenantId(tenantId);
+					accountConfig.setAccountId(accountId);
+					accountConfig.setProjectId(srcSysEntity.getString("projectId"));
+					accountConfig.setCredentialsFileContent(srcSysEntity.getString("credentialsFileContent"));
+
+					logger.debug("Found configured GCP source system with project id " + accountConfig.getProjectId());
+					return "";
+				}
+			}
+
+			String msg = "Could not find a configured GCP source system for tenant id " + tenantId + " and account id "
+					+ accountId;
+			logger.warn(msg);
+			return jsonMapper.writeValueAsString(new ResourcesWebResponse(5, msg));
+
+		} catch (Exception ex) {
+			String msg = "General Error";
+			logger.error(msg, ex);
+			String returnValue;
+			try {
+				returnValue = jsonMapper.writeValueAsString(new ResourcesWebResponse(6, msg));
+				return returnValue;
+			} catch (Exception ex2) {
+				return msg;
+			}
+		}
 	}
 
 	// @POST

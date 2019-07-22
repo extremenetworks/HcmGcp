@@ -21,6 +21,7 @@ import com.google.cloud.Timestamp;
 import com.google.cloud.datastore.Datastore;
 import com.google.cloud.datastore.Entity;
 import com.google.cloud.datastore.Key;
+import com.google.cloud.datastore.PathElement;
 import com.google.cloud.datastore.StringValue;
 import com.rabbitmq.client.Channel;
 
@@ -32,10 +33,8 @@ public class ResourcesWorker implements Runnable {
 	private static final Logger logger = LogManager.getLogger(ResourcesWorker.class);
 	private static ObjectMapper jsonMapper = new ObjectMapper();
 
-	// GCP config
-	private String tenantId;
-	private String projectId;
-	private String authFileContent;
+	// All config related to the GCP account
+	private AccountConfig accountConfig;
 
 	// Rabbit MQ config
 	private String RABBIT_QUEUE_NAME;
@@ -52,6 +51,7 @@ public class ResourcesWorker implements Runnable {
 	private final SimpleDateFormat dateFormatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 	private final String SRC_SYS_TYPE = "GCP";
 	private final String DS_ENTITY_KIND_GCP_RESOURCES = "GCP_Resources";
+	private final String DS_ENTITY_KIND_SRC_SYS_GCP = "SourceSystemGcp";
 
 	private Datastore datastore;
 
@@ -59,16 +59,14 @@ public class ResourcesWorker implements Runnable {
 		VM, Firewall, Network, Subnet, Region, Zone
 	}
 
-	public ResourcesWorker(String tenantId, String projectId, String authFileContent, String RABBIT_QUEUE_NAME,
-			Channel rabbitChannel, Datastore datastore) {
+	public ResourcesWorker(AccountConfig accountConfig, String RABBIT_QUEUE_NAME, Channel rabbitChannel,
+			Datastore datastore) {
 
 		// Extreme Networks' GCP Datastore connection
 		this.datastore = datastore;
 
 		// Customer tenant and customer GCP project id & corresponding credentials json
-		this.tenantId = tenantId;
-		this.projectId = projectId;
-		this.authFileContent = authFileContent;
+		this.accountConfig = accountConfig;
 
 		// Rabbit MQ queue / channel
 		this.RABBIT_QUEUE_NAME = RABBIT_QUEUE_NAME;
@@ -85,12 +83,16 @@ public class ResourcesWorker implements Runnable {
 	@Override
 	public void run() {
 
-		logger.debug(
-				"Running background worker to import resource data for tenant " + tenantId + " from GCP " + projectId);
+		logger.debug("Running background worker to import resource data for tenant " + accountConfig.getTenantId()
+				+ " from GCP " + accountConfig.getProjectId());
 
 		try {
+			String projectId = accountConfig.getProjectId();
+			String accountId = accountConfig.getAccountId();
+
 			GoogleComputeEngineManager computeManager = new GoogleComputeEngineManager();
-			boolean connected = computeManager.createComputeConnection(projectId, authFileContent);
+			boolean connected = computeManager.createComputeConnection(projectId,
+					accountConfig.getCredentialsFileContent());
 
 			if (!connected) {
 				String msg = "Won't be able to retrieve any data from Google Compute Engine since no authentication/authorization/connection could be established";
@@ -136,7 +138,7 @@ public class ResourcesWorker implements Runnable {
 				return;
 			}
 
-			writeToDb(RESOURCE_TYPES.Zone, allZones);
+			writeToDb(RESOURCE_TYPES.Zone, accountId, allZones);
 			publishBasicDataToRabbitMQ(RESOURCE_TYPES.Zone, allZones);
 
 			/* Regions */
@@ -148,7 +150,7 @@ public class ResourcesWorker implements Runnable {
 				return;
 			}
 
-			writeToDb(RESOURCE_TYPES.Region, allRegions);
+			writeToDb(RESOURCE_TYPES.Region, accountId, allRegions);
 			publishBasicDataToRabbitMQ(RESOURCE_TYPES.Region, allRegions);
 
 			/* Instances */
@@ -171,7 +173,7 @@ public class ResourcesWorker implements Runnable {
 					allInstances.addAll(instancesFromZone);
 				}
 
-				writeToDb(RESOURCE_TYPES.VM, allInstances);
+				writeToDb(RESOURCE_TYPES.VM, accountId, allInstances);
 				publishBasicDataToRabbitMQ(RESOURCE_TYPES.VM, allInstances);
 			}
 
@@ -196,7 +198,7 @@ public class ResourcesWorker implements Runnable {
 					allSubnets.addAll(subnetsFromRegion);
 				}
 
-				writeToDb(RESOURCE_TYPES.Subnet, allSubnets);
+				writeToDb(RESOURCE_TYPES.Subnet, accountId, allSubnets);
 				publishBasicDataToRabbitMQ(RESOURCE_TYPES.Subnet, allSubnets);
 			}
 
@@ -209,7 +211,7 @@ public class ResourcesWorker implements Runnable {
 				return;
 			}
 
-			writeToDb(RESOURCE_TYPES.Firewall, allFirewalls);
+			writeToDb(RESOURCE_TYPES.Firewall, accountId, allFirewalls);
 			publishBasicDataToRabbitMQ(RESOURCE_TYPES.Firewall, allFirewalls);
 
 			/* Networks */
@@ -221,7 +223,7 @@ public class ResourcesWorker implements Runnable {
 				return;
 			}
 
-			writeToDb(RESOURCE_TYPES.Network, allNetworks);
+			writeToDb(RESOURCE_TYPES.Network, accountId, allNetworks);
 			publishBasicDataToRabbitMQ(RESOURCE_TYPES.Network, allNetworks);
 
 			logger.debug("Finished retrieving all resources from GCP project " + projectId);
@@ -241,20 +243,21 @@ public class ResourcesWorker implements Runnable {
 	 *                     data (and then to a Blob) and then stored in the DB
 	 * @return
 	 */
-	private boolean writeToDb(RESOURCE_TYPES resourceType, List<Object> data) {
+	private boolean writeToDb(RESOURCE_TYPES resourceType, String accountId, List<Object> data) {
 
 		try {
 			// The name/ID for the new entity
 			String name = resourceType.name();
 
 			// The Cloud Datastore key for the new entity
-			Key entityKey = datastore.newKeyFactory().setNamespace(tenantId).setKind(DS_ENTITY_KIND_GCP_RESOURCES)
-					.newKey(name);
+			Key entityKey = datastore.newKeyFactory().setNamespace(accountConfig.getTenantId())
+					.setKind(DS_ENTITY_KIND_GCP_RESOURCES)
+					.addAncestor(PathElement.of(DS_ENTITY_KIND_SRC_SYS_GCP, accountId)).newKey(name);
 
-			Entity dataEntity = Entity
-					.newBuilder(entityKey).set("lastUpdated", Timestamp.now()).set("projectId", projectId)
-					.set("resourceType", resourceType.name()).set("resourceData", StringValue
-							.newBuilder(jsonMapper.writeValueAsString(data)).setExcludeFromIndexes(true).build())
+			Entity dataEntity = Entity.newBuilder(entityKey).set("lastUpdated", Timestamp.now())
+					.set("projectId", accountConfig.getProjectId()).set("resourceType", resourceType.name())
+					.set("resourceData", StringValue.newBuilder(jsonMapper.writeValueAsString(data))
+							.setExcludeFromIndexes(true).build())
 					.build();
 
 			logger.debug("About to update / write this entity towards GCP datastore:"
