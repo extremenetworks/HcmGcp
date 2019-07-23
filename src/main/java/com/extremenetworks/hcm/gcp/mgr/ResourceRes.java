@@ -92,9 +92,6 @@ public class ResourceRes {
 	public String retrieveAllResources(@QueryParam("tenantId") String tenantId,
 			@QueryParam("accountId") String accountId) {
 
-		logger.debug("Retrieving all resource data for tenant id " + tenantId + " and account id " + accountId
-				+ " from the GCP Datastore");
-
 		try {
 			/* Retrieve the config for the given tenant & account from Datastore */
 			AccountConfig accountConfig = new AccountConfig();
@@ -103,6 +100,9 @@ public class ResourceRes {
 			if (!accountValidationMsg.isEmpty()) {
 				return accountValidationMsg;
 			}
+
+			logger.debug("Retrieving all resource data for tenant id " + tenantId + " and account id " + accountId
+					+ " from the GCP Datastore");
 
 			// Retrieve all types of resources from GCP Datastore - Firewalls, VMs, etc.
 			Query<Entity> queryResources = Query.newEntityQueryBuilder().setNamespace(tenantId)

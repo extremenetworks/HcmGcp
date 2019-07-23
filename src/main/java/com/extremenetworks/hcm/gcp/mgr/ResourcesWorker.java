@@ -255,9 +255,8 @@ public class ResourcesWorker implements Runnable {
 					.addAncestor(PathElement.of(DS_ENTITY_KIND_SRC_SYS_GCP, accountId)).newKey(name);
 
 			Entity dataEntity = Entity.newBuilder(entityKey).set("lastUpdated", Timestamp.now())
-					.set("projectId", accountConfig.getProjectId()).set("resourceType", resourceType.name())
-					.set("resourceData", StringValue.newBuilder(jsonMapper.writeValueAsString(data))
-							.setExcludeFromIndexes(true).build())
+					.set("resourceType", resourceType.name()).set("resourceData", StringValue
+							.newBuilder(jsonMapper.writeValueAsString(data)).setExcludeFromIndexes(true).build())
 					.build();
 
 			logger.debug("About to update / write this entity towards GCP datastore:"
