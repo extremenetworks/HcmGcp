@@ -1,4 +1,4 @@
-package com.extremenetworks.hcm.gcp.mgr;
+package com.extremenetworks.hcm.gcp;
 
 public class AccountConfig {
 

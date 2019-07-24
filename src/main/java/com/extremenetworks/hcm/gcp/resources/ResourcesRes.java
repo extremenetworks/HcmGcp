@@ -1,4 +1,4 @@
-package com.extremenetworks.hcm.gcp.mgr;
+package com.extremenetworks.hcm.gcp.resources;
 
 import java.io.ByteArrayOutputStream;
 import java.text.SimpleDateFormat;
@@ -11,6 +11,9 @@ import javax.ws.rs.Produces;
 import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.MediaType;
 
+import com.extremenetworks.hcm.gcp.AccountConfig;
+import com.extremenetworks.hcm.gcp.Main;
+import com.extremenetworks.hcm.gcp.utils.WebResponse;
 import com.fasterxml.jackson.core.JsonEncoding;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
@@ -29,14 +32,15 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 @Path("resources")
-public class ResourceRes {
+public class ResourcesRes {
 
-	private static final Logger logger = LogManager.getLogger(ResourceRes.class);
+	private static final Logger logger = LogManager.getLogger(ResourcesRes.class);
 	private static ObjectMapper jsonMapper = new ObjectMapper();
 	private static final JsonFactory jsonFactory = new JsonFactory();
 
-	private final String rabbitServer = "rabbit-mq";
-	private final static String RABBIT_QUEUE_NAME = "gcp.resources";
+	// Host name of Rabbit-Mq server is set by Main on init()
+	public static String rabbitServer;
+	public static String RABBIT_QUEUE_NAME;
 	private static Channel rabbitChannel;
 
 	// private final String dbConnString =
@@ -48,12 +52,10 @@ public class ResourceRes {
 
 	private final SimpleDateFormat dateFormatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
-	private final String DS_ENTITY_KIND_GCP_RESOURCES = "GCP_Resources";
-	private final String DS_ENTITY_KIND_SRC_SYS_GCP = "SourceSystemGcp";
-
+	// Datastore connection
 	private Datastore datastore;
 
-	public ResourceRes() {
+	public ResourcesRes() {
 
 		try {
 			// Setup Rabbit connection
@@ -106,9 +108,9 @@ public class ResourceRes {
 
 			// Retrieve all types of resources from GCP Datastore - Firewalls, VMs, etc.
 			Query<Entity> queryResources = Query.newEntityQueryBuilder().setNamespace(tenantId)
-					.setKind(DS_ENTITY_KIND_GCP_RESOURCES)
-					.setFilter(PropertyFilter.hasAncestor(datastore.newKeyFactory().setKind(DS_ENTITY_KIND_SRC_SYS_GCP)
-							.setNamespace(tenantId).newKey(accountId)))
+					.setKind(Main.DS_ENTITY_KIND_DATA_RESOURCES)
+					.setFilter(PropertyFilter.hasAncestor(datastore.newKeyFactory()
+							.setKind(Main.DS_ENTITY_KIND_CONFIG_ACCOUNT).setNamespace(tenantId).newKey(accountId)))
 					.build();
 
 			QueryResults<Entity> queryResourcesResults = datastore.run(queryResources);
@@ -126,7 +128,8 @@ public class ResourceRes {
 
 			jsonGen.writeStringField("dataType", "resources");
 			jsonGen.writeStringField("sourceSystemType", "gcp");
-			jsonGen.writeStringField("sourceSystemProjectId", accountConfig.getProjectId());
+			jsonGen.writeStringField("sourceSystemTenantId", accountConfig.getTenantId());
+			jsonGen.writeStringField("sourceSystemAccountId", accountConfig.getAccountId());
 
 			/*
 			 * The "data" field will contain an array of objects. Each object will contain
@@ -174,7 +177,7 @@ public class ResourceRes {
 			logger.error(msg, ex);
 			String returnValue;
 			try {
-				returnValue = jsonMapper.writeValueAsString(new ResourcesWebResponse(4, msg));
+				returnValue = jsonMapper.writeValueAsString(new WebResponse(4, msg));
 				return returnValue;
 			} catch (Exception ex2) {
 				return msg;
@@ -214,15 +217,15 @@ public class ResourceRes {
 
 			executor.execute(new ResourcesWorker(accountConfig, RABBIT_QUEUE_NAME, rabbitChannel, datastore));
 
-			return jsonMapper.writeValueAsString(
-					new ResourcesWebResponse(0, "Successfully triggered an update of all resource data"));
+			return jsonMapper
+					.writeValueAsString(new WebResponse(0, "Successfully triggered an update of all resource data"));
 
 		} catch (Exception ex) {
 			String msg = "General Error";
 			logger.error(msg, ex);
 			String returnValue;
 			try {
-				returnValue = jsonMapper.writeValueAsString(new ResourcesWebResponse(4, msg));
+				returnValue = jsonMapper.writeValueAsString(new WebResponse(4, msg));
 				return returnValue;
 			} catch (Exception ex2) {
 				return msg;
@@ -249,21 +252,21 @@ public class ResourceRes {
 
 				String msg = "Missing URL parameter tenantId";
 				logger.warn(msg);
-				return jsonMapper.writeValueAsString(new ResourcesWebResponse(1, msg));
+				return jsonMapper.writeValueAsString(new WebResponse(1, msg));
 			}
 
 			if (accountId == null || accountId.isEmpty()) {
 
 				String msg = "Missing URL parameter accountId";
 				logger.warn(msg);
-				return jsonMapper.writeValueAsString(new ResourcesWebResponse(2, msg));
+				return jsonMapper.writeValueAsString(new WebResponse(2, msg));
 			}
 
 			// Retrieve all configured GCP source systems for this tenant
 			logger.debug("Retrieving config for tenant id " + tenantId + " and account id " + accountId);
 
 			Query<Entity> query = Query.newEntityQueryBuilder().setNamespace(tenantId)
-					.setKind(DS_ENTITY_KIND_SRC_SYS_GCP).build();
+					.setKind(Main.DS_ENTITY_KIND_CONFIG_ACCOUNT).build();
 
 			QueryResults<Entity> queryResults = datastore.run(query);
 
@@ -279,14 +282,14 @@ public class ResourceRes {
 					if (srcSysEntity.isNull("projectId") || srcSysEntity.isNull("credentialsFileContent")) {
 						String msg = "Found account config but it is missing property projectId and/or credentialsFileContent";
 						logger.warn(msg);
-						return jsonMapper.writeValueAsString(new ResourcesWebResponse(3, msg));
+						return jsonMapper.writeValueAsString(new WebResponse(3, msg));
 					}
 
 					if (srcSysEntity.getString("projectId").isEmpty()
 							|| srcSysEntity.getString("credentialsFileContent").isEmpty()) {
 						String msg = "Found account config but property projectId and/or credentialsFileContent is empty";
 						logger.warn(msg);
-						return jsonMapper.writeValueAsString(new ResourcesWebResponse(4, msg));
+						return jsonMapper.writeValueAsString(new WebResponse(4, msg));
 					}
 
 					accountConfig.setTenantId(tenantId);
@@ -302,14 +305,14 @@ public class ResourceRes {
 			String msg = "Could not find a configured GCP source system for tenant id " + tenantId + " and account id "
 					+ accountId;
 			logger.warn(msg);
-			return jsonMapper.writeValueAsString(new ResourcesWebResponse(5, msg));
+			return jsonMapper.writeValueAsString(new WebResponse(5, msg));
 
 		} catch (Exception ex) {
 			String msg = "General Error";
 			logger.error(msg, ex);
 			String returnValue;
 			try {
-				returnValue = jsonMapper.writeValueAsString(new ResourcesWebResponse(6, msg));
+				returnValue = jsonMapper.writeValueAsString(new WebResponse(6, msg));
 				return returnValue;
 			} catch (Exception ex2) {
 				return msg;
@@ -330,7 +333,7 @@ public class ResourceRes {
 	// String msg = "The projectId query parameter is not provided - not triggering
 	// an update!";
 	// logger.warn(msg);
-	// return jsonMapper.writeValueAsString(new ResourcesWebResponse(1, msg));
+	// return jsonMapper.writeValueAsString(new WebResponse(1, msg));
 	// }
 
 	// /* Config and start the background worker */
@@ -341,7 +344,7 @@ public class ResourceRes {
 	// RABBIT_QUEUE_NAME, rabbitChannel));
 
 	// return jsonMapper.writeValueAsString(
-	// new ResourcesWebResponse(0, "Successfully triggered an update of all resource
+	// new WebResponse(0, "Successfully triggered an update of all resource
 	// data"));
 
 	// } catch (Exception ex) {

@@ -1,21 +1,15 @@
-package com.extremenetworks.hcm.gcp.mgr;
+package com.extremenetworks.hcm.gcp;
 
 import java.util.ArrayList;
 import java.util.List;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.api.services.cloudbilling.model.ProjectBillingInfo;
+import com.google.api.services.compute.model.Firewall;
+import com.google.cloud.monitoring.v3.MetricServiceClient.ListTimeSeriesPagedResponse;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.api.services.compute.model.Firewall;
-import com.google.api.services.compute.model.FirewallList;
-import com.google.api.services.compute.model.InstanceList;
-import com.google.api.services.compute.model.NetworkList;
-import com.google.api.services.compute.model.RegionList;
-import com.google.api.services.compute.model.SubnetworkList;
-import com.google.api.services.compute.model.ZoneList;
-import com.google.cloud.monitoring.v3.MetricServiceClient.ListTimeSeriesPagedResponse;
-import com.google.api.services.cloudbilling.model.ProjectBillingInfo;
 
 public class GoogleComputeEngineManager {
 
@@ -66,7 +60,7 @@ public class GoogleComputeEngineManager {
 	public ListTimeSeriesPagedResponse retrieveMetrics(String projectId) {
 		return computeApi.retrieveMetrics(projectId);
 	}
-	
+
 	/**
 	 * Retrieves a list of firewalls from GCE.
 	 * 

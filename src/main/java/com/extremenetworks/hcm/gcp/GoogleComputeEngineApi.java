@@ -1,22 +1,11 @@
-package com.extremenetworks.hcm.gcp.mgr;
+package com.extremenetworks.hcm.gcp;
 
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ScheduledExecutorService;
-
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import org.threeten.bp.Duration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.api.client.googleapis.auth.oauth2.GoogleCredential;
@@ -24,48 +13,35 @@ import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
 import com.google.api.client.http.HttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.jackson2.JacksonFactory;
-import com.google.api.core.ApiClock;
-import com.google.api.gax.core.BackgroundResource;
-import com.google.api.gax.core.CredentialsProvider;
 import com.google.api.gax.core.FixedCredentialsProvider;
-import com.google.api.gax.core.GoogleCredentialsProvider;
-import com.google.api.gax.rpc.ApiCallContext;
-import com.google.api.gax.rpc.ClientContext;
-import com.google.api.gax.rpc.TransportChannel;
-import com.google.api.gax.rpc.Watchdog;
-import com.google.api.gax.rpc.ClientContext.Builder;
-import com.google.api.gax.tracing.ApiTracerFactory;
+import com.google.api.services.cloudbilling.Cloudbilling;
+import com.google.api.services.cloudbilling.CloudbillingScopes;
+import com.google.api.services.cloudbilling.model.ProjectBillingInfo;
 import com.google.api.services.compute.Compute;
 import com.google.api.services.compute.ComputeScopes;
 import com.google.api.services.compute.model.Firewall;
 import com.google.api.services.compute.model.FirewallList;
 import com.google.api.services.compute.model.Instance;
 import com.google.api.services.compute.model.InstanceList;
-import com.google.api.services.compute.model.Network;
 import com.google.api.services.compute.model.NetworkList;
 import com.google.api.services.compute.model.Operation;
-import com.google.api.services.compute.model.Region;
 import com.google.api.services.compute.model.RegionList;
-import com.google.api.services.compute.model.Subnetwork;
 import com.google.api.services.compute.model.SubnetworkList;
 import com.google.api.services.compute.model.Tags;
-import com.google.api.services.compute.model.Zone;
 import com.google.api.services.compute.model.ZoneList;
 import com.google.api.services.monitoring.v3.MonitoringScopes;
-import com.google.auth.Credentials;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.monitoring.v3.MetricServiceClient;
 import com.google.cloud.monitoring.v3.MetricServiceClient.ListTimeSeriesPagedResponse;
 import com.google.cloud.monitoring.v3.MetricServiceSettings;
-import com.google.cloud.monitoring.v3.stub.MetricServiceStub;
 import com.google.monitoring.v3.ListTimeSeriesRequest;
 import com.google.monitoring.v3.ProjectName;
 import com.google.monitoring.v3.TimeInterval;
 import com.google.monitoring.v3.TimeSeries;
 import com.google.protobuf.util.Timestamps;
-import com.google.api.services.cloudbilling.Cloudbilling;
-import com.google.api.services.cloudbilling.model.ProjectBillingInfo;
-import com.google.api.services.cloudbilling.CloudbillingScopes;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 public class GoogleComputeEngineApi {
 
@@ -77,7 +53,7 @@ public class GoogleComputeEngineApi {
 	private HashMap<String, Compute> computeConnections;
 	private HashMap<String, Cloudbilling> billingConnections;
 	private HashMap<String, MetricServiceClient> metricsConnections;
-	
+
 	private static HttpTransport httpTransport;
 	private final String APPLICATION_NAME = "Connect/1.0";
 	private static final JsonFactory JSON_FACTORY = JacksonFactory.getDefaultInstance();
@@ -113,7 +89,7 @@ public class GoogleComputeEngineApi {
 		/* Load the JSON credentials file content */
 		GoogleCredential credV1 = null;
 		GoogleCredentials credV2 = null;
-		
+
 		try {
 			InputStream credFileInputStreamV1 = new ByteArrayInputStream(
 					authFileContent.getBytes(StandardCharsets.UTF_8));
@@ -122,14 +98,13 @@ public class GoogleComputeEngineApi {
 			authScopes.add(ComputeScopes.COMPUTE);
 			authScopes.add(CloudbillingScopes.CLOUD_PLATFORM);
 			authScopes.add(MonitoringScopes.MONITORING_READ);
-			
+
 			credV1 = GoogleCredential.fromStream(credFileInputStreamV1).createScoped(authScopes);
 
 			InputStream credFileInputStreamV2 = new ByteArrayInputStream(
 					authFileContent.getBytes(StandardCharsets.UTF_8));
 			credV2 = GoogleCredentials.fromStream(credFileInputStreamV2).createScoped(authScopes);
-			
-			
+
 		} catch (Exception ex) {
 			logger.error("Error loading the credentials JSON file content for authorizing against the GCP project "
 					+ projectId, ex);
@@ -146,11 +121,9 @@ public class GoogleComputeEngineApi {
 			billingConnections.put(projectId, new Cloudbilling.Builder(httpTransport, JSON_FACTORY, credV1)
 					.setApplicationName("Extreme Networks Hybrid Cloud Manager").build());
 
-			metricsConnections.put(projectId, MetricServiceClient.create(
-	                  MetricServiceSettings.newBuilder()
-	                      .setCredentialsProvider(FixedCredentialsProvider.create(credV2))
-	                      .build()));
-			
+			metricsConnections.put(projectId, MetricServiceClient.create(MetricServiceSettings.newBuilder()
+					.setCredentialsProvider(FixedCredentialsProvider.create(credV2)).build()));
+
 			return true;
 
 		} catch (Exception e) {
@@ -1032,7 +1005,6 @@ public class GoogleComputeEngineApi {
 		}
 	}
 
-	
 	public ProjectBillingInfo retrieveBillingInfo(String projectId) {
 
 		Cloudbilling billingConnection = billingConnections.get(projectId);
@@ -1055,9 +1027,10 @@ public class GoogleComputeEngineApi {
 				return null;
 			}
 
-//			logger.debug("Successfully retrieved billing info: " + response.toPrettyString());
+			// logger.debug("Successfully retrieved billing info: " +
+			// response.toPrettyString());
 			logger.debug("Successfully retrieved billing info: " + jsonMapper.writeValueAsString(response));
-			
+
 			return response;
 
 		} catch (Exception e) {
@@ -1065,8 +1038,6 @@ public class GoogleComputeEngineApi {
 			return null;
 		}
 	}
-
-	
 
 	public ListTimeSeriesPagedResponse retrieveMetrics(String projectId) {
 
@@ -1082,15 +1053,12 @@ public class GoogleComputeEngineApi {
 		try {
 			// Restrict time to last 20 minutes
 			long startMillis = System.currentTimeMillis() - ((60 * 20) * 1000);
-			TimeInterval interval = TimeInterval.newBuilder()
-			    .setStartTime(Timestamps.fromMillis(startMillis))
-			    .setEndTime(Timestamps.fromMillis(System.currentTimeMillis()))
-			    .build();
+			TimeInterval interval = TimeInterval.newBuilder().setStartTime(Timestamps.fromMillis(startMillis))
+					.setEndTime(Timestamps.fromMillis(System.currentTimeMillis())).build();
 
 			ListTimeSeriesRequest.Builder requestBuilder = ListTimeSeriesRequest.newBuilder()
-			    .setName(ProjectName.of(projectId).toString())
-			    .setFilter("metric.type=\"compute.googleapis.com/instance/cpu/utilization\"")
-			    .setInterval(interval);
+					.setName(ProjectName.of(projectId).toString())
+					.setFilter("metric.type=\"compute.googleapis.com/instance/cpu/utilization\"").setInterval(interval);
 
 			ListTimeSeriesRequest request = requestBuilder.build();
 
@@ -1101,12 +1069,13 @@ public class GoogleComputeEngineApi {
 				return null;
 			}
 
-//			logger.debug("Successfully retrieved billing info: " + response.toPrettyString());
+			// logger.debug("Successfully retrieved billing info: " +
+			// response.toPrettyString());
 			logger.debug("Successfully retrieved metric info: ");
 			for (TimeSeries ts : response.iterateAll()) {
 				logger.debug(ts);
 			}
-			
+
 			return response;
 
 		} catch (Exception e) {
@@ -1115,7 +1084,6 @@ public class GoogleComputeEngineApi {
 		}
 	}
 
-	
 	public Long getMaxQueryResults() {
 		return maxQueryResults;
 	}

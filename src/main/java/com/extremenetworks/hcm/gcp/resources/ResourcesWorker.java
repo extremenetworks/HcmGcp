@@ -1,4 +1,4 @@
-package com.extremenetworks.hcm.gcp.mgr;
+package com.extremenetworks.hcm.gcp.resources;
 
 import java.io.ByteArrayOutputStream;
 import java.text.SimpleDateFormat;
@@ -6,6 +6,8 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
+import com.extremenetworks.hcm.gcp.AccountConfig;
+import com.extremenetworks.hcm.gcp.GoogleComputeEngineManager;
 import com.fasterxml.jackson.core.JsonEncoding;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;

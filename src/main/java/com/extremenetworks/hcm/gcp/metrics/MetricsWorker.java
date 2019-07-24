@@ -1,25 +1,20 @@
-package com.extremenetworks.hcm.gcp.mgr;
+package com.extremenetworks.hcm.gcp.metrics;
 
 import java.io.ByteArrayOutputStream;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.List;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-
+import com.extremenetworks.hcm.gcp.GoogleComputeEngineManager;
 import com.fasterxml.jackson.core.JsonEncoding;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.api.services.compute.model.Region;
-import com.google.api.services.compute.model.Zone;
-import com.google.api.services.compute.model.ZoneList;
 import com.rabbitmq.client.Channel;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 public class MetricsWorker implements Runnable {
 
@@ -76,13 +71,13 @@ public class MetricsWorker implements Runnable {
 				return;
 			}
 
-//			java.sql.Connection dbConn = DriverManager.getConnection(dbConnString, dbUser, dbPassword);
+			// java.sql.Connection dbConn = DriverManager.getConnection(dbConnString,
+			// dbUser, dbPassword);
 
 			computeManager.retrieveMetrics(projectId);
 
-
-//			writeToDb(dbConn, "Firewall", allFirewalls);
-//			publishToRabbitMQ("Firewall", allFirewalls);
+			// writeToDb(dbConn, "Firewall", allFirewalls);
+			// publishToRabbitMQ("Firewall", allFirewalls);
 
 			logger.debug("Finished retrieving all metrics data from GCP project " + projectId);
 
