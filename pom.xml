@@ -3,7 +3,7 @@
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
-	<groupId>com.extremenetworks.ng.hybridcloud</groupId>
+	<groupId>com.extremenetworks.hybridcloud</groupId>
 	<artifactId>gcp</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 <!-- 	<packaging>war</packaging> -->
@@ -19,7 +19,7 @@
 	</properties>
 	<build>
 		<sourceDirectory>src/main/java</sourceDirectory>
-		<finalName>NgHcmGcpMgr</finalName>
+		<finalName>HcmGcp</finalName>
 		<plugins>
 			<plugin>
 				<artifactId>maven-compiler-plugin</artifactId>
@@ -39,7 +39,7 @@
 						<manifest>
 							<addClasspath>true</addClasspath>
 							<classpathPrefix>dependency-jars/</classpathPrefix>
-							<mainClass>com.extremenetworks.hcm.gcp.mgr.Main</mainClass>
+							<mainClass>com.extremenetworks.hcm.gcp.Main</mainClass>
 						</manifest>
 					</archive>
 				</configuration>
@@ -104,7 +104,7 @@
 		<dependency>
 			<groupId>com.google.apis</groupId>
 			<artifactId>google-api-services-cloudbilling</artifactId>
-			<version>v1-rev30-1.25.0</version>
+			<version>v1-rev42-1.25.0</version>
 		</dependency>
 		<dependency>
 		    <groupId>com.google.cloud</groupId>

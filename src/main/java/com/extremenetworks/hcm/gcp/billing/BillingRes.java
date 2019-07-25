@@ -2,6 +2,7 @@ package com.extremenetworks.hcm.gcp.billing;
 
 import java.io.ByteArrayOutputStream;
 import java.text.SimpleDateFormat;
+import java.util.HashSet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -38,9 +39,8 @@ public class BillingRes {
 	private static ObjectMapper jsonMapper = new ObjectMapper();
 	private static final JsonFactory jsonFactory = new JsonFactory();
 
-	public static String rabbitServer;
-	public static String RABBIT_QUEUE_NAME;
 	private static Channel rabbitChannel;
+	private HashSet<String> declaredRabbitQueues = new HashSet<String>();
 
 	// Datastore connection
 	private Datastore datastore;
@@ -53,11 +53,10 @@ public class BillingRes {
 
 		try {
 			ConnectionFactory factory = new ConnectionFactory();
-			factory.setHost(rabbitServer);
+			factory.setHost(Main.RABBIT_SERVER);
 
 			Connection connection = factory.newConnection();
 			rabbitChannel = connection.createChannel();
-			rabbitChannel.queueDeclare(RABBIT_QUEUE_NAME, true, false, false, null);
 
 			executor = Executors.newCachedThreadPool();
 
@@ -200,6 +199,13 @@ public class BillingRes {
 				return accountValidationMsg;
 			}
 
+			String rabbitQueueName = tenantId + Main.RABBIT_QUEUE_POSTFIX_BILLING;
+			if (!declaredRabbitQueues.contains(rabbitQueueName)) {
+				logger.info("Declaring new Rabbit MQ queue name: " + rabbitQueueName);
+				rabbitChannel.queueDeclare(rabbitQueueName, false, false, false, null);
+				declaredRabbitQueues.add(rabbitQueueName);
+			}
+
 			if (startDate == null || startDate.isEmpty() || endDate == null || endDate.isEmpty()) {
 				String msg = "Missing startDate and / or endDate parameters";
 				logger.warn(msg);
@@ -211,7 +217,7 @@ public class BillingRes {
 					"Creating background worker to import billing data from AWS account: " + accountConfig.toString());
 
 			executor.execute(
-					new BillingWorker(accountConfig, startDate, endDate, RABBIT_QUEUE_NAME, rabbitChannel, datastore));
+					new BillingWorker(accountConfig, startDate, endDate, rabbitQueueName, rabbitChannel, datastore));
 
 			return jsonMapper
 					.writeValueAsString(new WebResponse(0, "Successfully triggered an update of all billing data"));

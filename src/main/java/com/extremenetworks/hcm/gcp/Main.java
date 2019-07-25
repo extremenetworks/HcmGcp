@@ -13,6 +13,8 @@ public class Main {
 
     // Rabbit MQ config
     public static final String RABBIT_SERVER = "rabbit-mq";
+    public static final String RABBIT_QUEUE_POSTFIX_RESOURCES = ".gcp.data.resources";
+    public static final String RABBIT_QUEUE_POSTFIX_BILLING = ".gcp.data.billing";
 
     // GCP Datastore config
     public static final String DS_ENTITY_KIND_DATA_RESOURCES = "Gcp_Data_Resources";

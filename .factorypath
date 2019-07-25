@@ -19,7 +19,7 @@
     <factorypathentry kind="VARJAR" id="M2_REPO/commons-logging/commons-logging/1.2/commons-logging-1.2.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/commons-codec/commons-codec/1.10/commons-codec-1.10.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/com/google/apis/google-api-services-compute/v1-rev210-1.25.0/google-api-services-compute-v1-rev210-1.25.0.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/com/google/apis/google-api-services-cloudbilling/v1-rev30-1.25.0/google-api-services-cloudbilling-v1-rev30-1.25.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/com/google/apis/google-api-services-cloudbilling/v1-rev42-1.25.0/google-api-services-cloudbilling-v1-rev42-1.25.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/com/google/cloud/google-cloud-monitoring/1.73.0/google-cloud-monitoring-1.73.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/com/google/cloud/google-cloud-core/1.73.0/google-cloud-core-1.73.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/com/google/api/api-common/1.8.1/api-common-1.8.1.jar" enabled="true" runInBatchMode="false"/>

@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.api.client.googleapis.auth.oauth2.GoogleCredential;
@@ -16,7 +17,10 @@ import com.google.api.client.json.jackson2.JacksonFactory;
 import com.google.api.gax.core.FixedCredentialsProvider;
 import com.google.api.services.cloudbilling.Cloudbilling;
 import com.google.api.services.cloudbilling.CloudbillingScopes;
+import com.google.api.services.cloudbilling.model.ListServicesResponse;
+import com.google.api.services.cloudbilling.model.ListSkusResponse;
 import com.google.api.services.cloudbilling.model.ProjectBillingInfo;
+import com.google.api.services.cloudbilling.model.Service;
 import com.google.api.services.compute.Compute;
 import com.google.api.services.compute.ComputeScopes;
 import com.google.api.services.compute.model.Firewall;
@@ -1017,7 +1021,7 @@ public class GoogleComputeEngineApi {
 		logger.debug("Retrieving billing info from project " + projectId);
 
 		try {
-			// Retrieve all regions for the given project
+
 			Cloudbilling.Projects.GetBillingInfo request = billingConnection.projects()
 					.getBillingInfo("projects/" + projectId);
 			ProjectBillingInfo response = request.execute();
@@ -1030,6 +1034,58 @@ public class GoogleComputeEngineApi {
 			// logger.debug("Successfully retrieved billing info: " +
 			// response.toPrettyString());
 			logger.debug("Successfully retrieved billing info: " + jsonMapper.writeValueAsString(response));
+
+			// Retrieve all regions for the given project
+			Cloudbilling.Services.List cloudServicesRequest = billingConnection.services().list();
+			ListServicesResponse responseCloudServices = cloudServicesRequest.execute();
+
+			if (responseCloudServices == null) {
+				logger.info("No billing info found on any service for project with id " + projectId);
+				return null;
+			}
+
+			Service computeEngineService = null;
+
+			for (Map.Entry<String, Object> entry : responseCloudServices.entrySet()) {
+				if (entry.getKey().equalsIgnoreCase("services")) {
+					logger.debug("Next set of services: " + jsonMapper.writeValueAsString(entry));
+					List<Service> services = (List<Service>) entry.getValue();
+
+					for (Service service : services) {
+						if (service.getDisplayName().equalsIgnoreCase("Compute Engine"))
+							;
+						computeEngineService = service;
+						break;
+					}
+
+				}
+			}
+
+			if (computeEngineService == null) {
+				logger.warn("Could not retrieve the service object for the 'Compute Engine' service");
+				return null;
+			}
+
+			ListSkusResponse responseComputeEngineSKUs = billingConnection.services().skus()
+					.list(computeEngineService.getName()).execute();
+
+			if (responseComputeEngineSKUs == null) {
+				logger.warn("Could not retrieve the SKUs for the 'Compute Engine' service");
+				return null;
+			}
+
+			for (Map.Entry<String, Object> entry : responseComputeEngineSKUs.entrySet()) {
+				logger.debug("Next compute engine SKU: " + jsonMapper.writeValueAsString(entry));
+			}
+
+			// if (cloudServices != null) {
+			// cloudServices.
+			// while( cloudServices.iter)
+			// for (service: cloudServices) {
+
+			// }
+			// logger.debug("Retrieving all SKUs for service " + );
+			// }
 
 			return response;
 
